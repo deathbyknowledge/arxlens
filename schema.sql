@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS papers (
   votes_up INTEGER NOT NULL DEFAULT 0,
   votes_down INTEGER NOT NULL DEFAULT 0,
   review_status TEXT NOT NULL DEFAULT 'pending', -- pending | reviewing | done | error
+  intro TEXT NOT NULL DEFAULT '',               -- AI-generated plain-language intro (synced from DO)
   fetched_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
@@ -28,8 +29,8 @@ CREATE TABLE IF NOT EXISTS watched_categories (
 INSERT OR IGNORE INTO watched_categories (category) VALUES
   ('cs.AI'), ('cs.LG'), ('cs.CL'), ('cs.CV'), ('stat.ML');
 
--- High-water mark per category: newest published_at we've successfully enqueued
+-- Cron cursor per category: tracks offset for paginated fetching
 CREATE TABLE IF NOT EXISTS cron_state (
   category TEXT PRIMARY KEY,
-  newest_published_at TEXT NOT NULL  -- ISO 8601
+  next_offset INTEGER NOT NULL DEFAULT 0
 );

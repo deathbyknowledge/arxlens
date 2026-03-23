@@ -116,6 +116,18 @@ main {
   font-size: 11px;
   margin-right: 4px;
 }
+.paper-preview {
+  position: relative;
+}
+.paper-intro {
+  font-size: 13px;
+  color: #1f2328;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .paper-abstract {
   font-size: 13px;
   color: #3d444d;
@@ -125,6 +137,30 @@ main {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+/* Abstract tooltip: appears on hover over the preview area */
+.abstract-tooltip {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 10;
+  padding-top: 6px;
+}
+.abstract-tooltip-inner {
+  background: #fff;
+  border: 1px solid #d1d9e0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 12px;
+  color: #3d444d;
+  line-height: 1.6;
+  font-style: italic;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  max-height: 200px;
+  overflow-y: auto;
+}
+.paper-preview:hover .abstract-tooltip { display: block; }
 .paper-footer {
   display: flex;
   align-items: center;
@@ -352,6 +388,7 @@ function layout(title: string, content: string): string {
       <a href="/?sort=hot">Hot</a>
       <a href="/?sort=new">New</a>
       <a href="/?sort=top">Top</a>
+      <a href="/about">About</a>
     </nav>
   </div>
 </header>
@@ -360,7 +397,7 @@ ${content}
 </main>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js"
-  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false})"></script>
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\\\(',right:'\\\\)',display:false},{left:'\\\\[',right:'\\\\]',display:true}],throwOnError:false})"></script>
 </body>
 </html>`;
 }
@@ -456,7 +493,13 @@ function paperCard(p: PaperRow): string {
         &middot;
         <span>${formatDate(p.published_at)}</span>
       </div>
-      <div class="paper-abstract">${htmlEscape(p.abstract)}</div>
+      <div class="paper-preview">
+        ${p.intro
+          ? `<div class="paper-intro">${escapeWithMath(p.intro)}</div>`
+          : `<div class="paper-abstract">${htmlEscape(p.abstract)}</div>`
+        }
+        <div class="abstract-tooltip"><div class="abstract-tooltip-inner">${htmlEscape(p.abstract)}</div></div>
+      </div>
       <div class="paper-footer">
         ${aiStatus}
         <a href="${htmlEscape(p.arxiv_url)}" target="_blank" rel="noopener">arXiv</a>
@@ -633,6 +676,139 @@ function challengeItemHtml(c: Challenge): string {
 }
 
 // ---------------------------------------------------------------------------
+// About page
+// ---------------------------------------------------------------------------
+
+export interface AboutOptions {
+  categories: string[];
+  paperCount: number;
+  reviewedCount: number;
+}
+
+export function aboutPage(opts: AboutOptions): string {
+  const { categories, paperCount, reviewedCount } = opts;
+  const catList = categories.map(c => `<span class="category">${htmlEscape(c)}</span>`).join(" ");
+
+  const content = `
+<div class="paper-detail">
+  <h1 class="paper-detail-title">About arxlens</h1>
+
+  <div class="section">
+    <div class="section-header">What is this?</div>
+    <div class="section-body">
+      <p>arxlens is a free, AI-powered overlay for <a href="https://arxiv.org" target="_blank" rel="noopener">arXiv</a>. Every day, new papers are fetched, read in full, and reviewed by an AI agent that can follow up on cited sources to verify claims.</p>
+      <p>Each paper gets a plain-language introduction (so you can quickly decide if it's relevant) and a critical review (so you can see where the strengths and weaknesses are before reading the full paper yourself). You can also challenge any part of the review and the AI will investigate your concern.</p>
+      <p>The goal is to make the daily arXiv flood navigable without sacrificing rigor.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">Stats</div>
+    <div class="section-body">
+      <p><strong>${paperCount}</strong> papers indexed &middot; <strong>${reviewedCount}</strong> AI-reviewed</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">Watched categories</div>
+    <div class="section-body">
+      <p>${catList}</p>
+      <p style="font-size:12px;color:#656d76;margin-top:8px">Categories are configurable without redeploy. Visit any arXiv paper directly (e.g. <code>/paper/2401.12345</code>) to trigger an on-demand review for papers outside these categories.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">How it works</div>
+    <div class="section-body">
+      <p><strong>Infrastructure:</strong> Cloudflare Workers + Durable Objects + D1 + Queues + Workers AI</p>
+      <p><strong>Model:</strong> <code>@cf/moonshotai/kimi-k2.5</code> (256k context window, function calling)</p>
+      <p><strong>Paper text:</strong> Fetched from arXiv HTML (preferred) or PDF, converted to Markdown via <code>Workers AI toMarkdown</code>. Full paper text is cached in the Durable Object's SQLite storage.</p>
+      <p><strong>Review pipeline:</strong> Each paper is a Durable Object. Reviews run as an alarm-based loop &mdash; one model call per alarm fire, giving a fresh subrequest budget per step. The agent can call <code>fetch_url</code> to pull cited papers and verify claims. Up to 20 steps, with exponential-backoff retries on failure.</p>
+      <p><strong>Architecture:</strong></p>
+      <pre style="font-size:12px;line-height:1.6;background:#f6f8fa;padding:12px;border-radius:6px;overflow-x:auto">Cron (daily)
+  &darr; fetch arXiv API &rarr; parse metadata
+  &darr; sendBatch()
+Queue (PAPER_QUEUE)
+  &darr; for each paper:
+PaperAgent DO (per paper, via RPC)
+  1. Upsert D1 row
+  2. Fetch paper text (HTML &rarr; PDF &rarr; toMarkdown)
+  3. Alarm-based review loop (Kimi K2.5 + fetch_url tool)
+  4. Sync status + intro back to D1</pre>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">Review prompt</div>
+    <div class="section-body">
+      <p style="font-size:12px;color:#656d76;margin-bottom:8px">This is the exact system prompt used to generate reviews. Full transparency &mdash; you can see exactly what the AI is told to do.</p>
+      <pre style="font-size:11px;line-height:1.5;background:#f6f8fa;padding:12px;border-radius:6px;overflow-x:auto;white-space:pre-wrap">${htmlEscape(REVIEW_PROMPT_TEXT)}</pre>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">Challenge prompt</div>
+    <div class="section-body">
+      <p style="font-size:12px;color:#656d76;margin-bottom:8px">When you challenge a review, this is the system prompt used.</p>
+      <pre style="font-size:11px;line-height:1.5;background:#f6f8fa;padding:12px;border-radius:6px;overflow-x:auto;white-space:pre-wrap">${htmlEscape(CHALLENGE_PROMPT_TEXT)}</pre>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">Source code</div>
+    <div class="section-body">
+      <p><a href="https://github.com/sjames/arxlens" target="_blank" rel="noopener">github.com/sjames/arxlens</a></p>
+    </div>
+  </div>
+</div>`;
+
+  return layout("About", content);
+}
+
+// Prompts are imported from paper-agent.ts and passed here as strings
+// to avoid circular deps. Set via the exported constants below.
+export const REVIEW_PROMPT_TEXT = `You are a rigorous scientific reviewer with the ability to fetch URLs to verify sources.
+
+You will receive the full text of an academic paper in Markdown.
+Produce exactly two sections:
+
+INTRO:
+Write 2-3 paragraphs explaining the paper for a smart non-specialist.
+  - What problem does it solve?
+  - What is the core idea or approach?
+  - Why does it matter and who should care?
+  Do NOT just paraphrase the abstract. Synthesize.
+
+REVIEW:
+Write 4-6 paragraphs of rigorous critical evaluation. Cover:
+  - Soundness of methodology and experimental design
+  - Whether claims are supported by the evidence shown
+  - Key assumptions, limitations, or things glossed over
+  - Fit with related work \u2014 use fetch_url to pull cited papers from
+    https://arxiv.org/html/{id} and verify comparisons are fair
+  - Whether results are reproducible (hyperparameters, data, code released?)
+  Be direct. Name flaws explicitly. Do not praise without cause.
+
+Formatting rules:
+  - Use LaTeX for all math: inline $...$ and display $$...$$
+  - When referencing equations, losses, metrics, or any mathematical content
+    from the paper, reproduce them in LaTeX rather than describing them in words.
+  - Write prose in plain text (not LaTeX). Only math goes in dollar signs.
+
+Your response must begin with "INTRO:" and contain "REVIEW:" \u2014 no other top-level text.`;
+
+export const CHALLENGE_PROMPT_TEXT = `You are a rigorous scientific fact-checker. A user has raised a specific challenge about a claim in a paper or its AI review.
+
+Your job:
+  1. Investigate the concern objectively using the paper text provided
+  2. Use fetch_url to pull cited sources or URLs the user mentions
+     (prefer https://arxiv.org/html/{id} for arXiv papers)
+  3. Quote directly from sources when making claims
+  4. If the user is right, say so clearly; if wrong, explain why with evidence
+  5. Be concise: 2-4 paragraphs, evidence-first
+  6. Use LaTeX for math: inline $...$ and display $$...$$`;
+
+// ---------------------------------------------------------------------------
 // Error page
 // ---------------------------------------------------------------------------
 
@@ -679,8 +855,9 @@ function renderParagraphs(text: string): string {
  */
 function escapeWithMath(text: string): string {
   // Split on math delimiters, preserving them.
-  // Matches $$...$$ (display) and $...$ (inline), non-greedy.
-  const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/g);
+  // Matches $$...$$, $...$, \(...\), \[...\] — non-greedy.
+  const mathPattern = /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\])/g;
+  const parts = text.split(mathPattern);
   return parts
     .map((part, i) => {
       // Odd indices are the captured math groups — leave them raw

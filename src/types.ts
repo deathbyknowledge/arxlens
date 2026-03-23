@@ -15,6 +15,7 @@ export interface PaperRow {
   votes_up: number;
   votes_down: number;
   review_status: "pending" | "reviewing" | "done" | "error";
+  intro: string;        // AI-generated plain-language intro (synced from DO)
   fetched_at: number;   // unix epoch
 }
 

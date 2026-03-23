@@ -9,20 +9,13 @@
  */
 
 import {getAgentByName} from "agents";
-import { feedPage, paperDetailPage, errorPage } from "./html";
+import { feedPage, paperDetailPage, errorPage, aboutPage } from "./html";
 import type { PaperRow, PaperMeta, QueueMessage } from "./types";
 export { PaperAgent } from "./paper-agent";
 import { env } from "cloudflare:workers";
 
 const PAGE_SIZE = 20;
 const IS_DEV = env.DEV === "true";
-
-function safeAgentId(arxivId: string): string {
-  return arxivId
-    .replace(/v\d+$/, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9.-]/g, "-");
-}
 
 function htmlResponse(html: string, status = 200): Response {
   return new Response(html, {
@@ -60,65 +53,49 @@ async function scheduled(env: Env): Promise<void> {
 }
 
 async function fetchAndEnqueue(category: string): Promise<void> {
-  // Load high-water mark
-  const hwRow = await env.DB.prepare(
-    "SELECT newest_published_at FROM cron_state WHERE category = ?",
-  )
-    .bind(category)
-    .first<{ newest_published_at: string }>();
-  const highWater = hwRow?.newest_published_at ?? null;
+  const pageSize = IS_DEV ? 2 : 100;
+  const label = `[cron${IS_DEV ? ":dev" : ""}]`;
 
-  // Build submittedDate filter if we have a high-water mark
-  let dateFilter = "";
-  if (highWater) {
-    // Convert ISO date to arXiv format: YYYYMMDDTTTT
-    const from = highWater.replace(/[-T:]/g, "").slice(0, 12);
-    const now = new Date().toISOString().replace(/[-T:]/g, "").slice(0, 12);
-    dateFilter = `+AND+submittedDate:[${from}+TO+${now}]`;
-  }
+  // Load cursor: where we left off last run
+  const cursorRow = await env.DB.prepare(
+    "SELECT next_offset FROM cron_state WHERE category = ?"
+  ).bind(category).first<{ next_offset: number }>();
+  const start = cursorRow?.next_offset ?? 0;
 
-  const maxResults = IS_DEV ? 2 : 100;
   const url =
     `https://export.arxiv.org/api/query` +
-    `?search_query=cat:${encodeURIComponent(category)}${dateFilter}` +
+    `?search_query=cat:${encodeURIComponent(category)}` +
     `&sortBy=submittedDate&sortOrder=descending` +
-    `&start=0&max_results=${maxResults}`;
+    `&start=${start}&max_results=${pageSize}`;
 
   const res = await fetchWithRetry(url);
-  const xml = await res.text();
-  const papers = parseArxivAtom(xml);
+  const papers = parseArxivAtom(await res.text());
 
   if (papers.length === 0) {
-    console.log(`[cron${IS_DEV ? ":dev" : ""}] ${category}: nothing new`);
+    // Caught up — reset offset for the next daily batch
+    if (start > 0) {
+      await setCronOffset(category, 0);
+      console.log(`${label} ${category}: caught up, reset offset`);
+    } else {
+      console.log(`${label} ${category}: nothing new`);
+    }
     return;
   }
 
-  // Filter out papers we've already seen (at or before high-water mark)
-  const newPapers = highWater
-    ? papers.filter((p) => p.publishedAt > highWater)
-    : papers;
+  // Enqueue all papers — DOs handle dedup (skip if already reviewing/done)
+  const messages = papers.map((meta) => ({ body: { paperId: meta.id, meta } }));
+  await env.PAPER_QUEUE.sendBatch(messages);
 
-  if (newPapers.length > 0) {
-    // Enqueue in batches (Queue.sendBatch accepts up to 100 messages)
-    const messages = newPapers.map((meta) => ({
-      body: { paperId: meta.id, meta },
-    }));
-    await env.PAPER_QUEUE.sendBatch(messages);
+  // Advance the cursor so the next run picks up the next page
+  await setCronOffset(category, start + papers.length);
 
-    // Update high-water mark to the newest paper
-    const newest = newPapers.reduce((a, b) =>
-      a.publishedAt > b.publishedAt ? a : b,
-    );
-    await env.DB.prepare(
-      "INSERT OR REPLACE INTO cron_state (category, newest_published_at) VALUES (?, ?)",
-    )
-      .bind(category, newest.publishedAt)
-      .run();
-  }
+  console.log(`${label} ${category}: enqueued ${papers.length} (offset ${start}→${start + papers.length})`);
+}
 
-  console.log(
-    `[cron${IS_DEV ? ":dev" : ""}] ${category}: enqueued ${newPapers.length} papers`,
-  );
+async function setCronOffset(category: string, offset: number): Promise<void> {
+  await env.DB.prepare(
+    "INSERT OR REPLACE INTO cron_state (category, next_offset) VALUES (?, ?)"
+  ).bind(category, offset).run();
 }
 
 async function fetchWithRetry(url: string): Promise<Response> {
@@ -136,6 +113,20 @@ async function fetchWithRetry(url: string): Promise<Response> {
     await sleep(wait);
   }
   throw new Error("arXiv: exhausted retries on 429");
+}
+
+async function handleAbout(env: Env): Promise<Response> {
+  const [catRows, countRow, reviewedRow] = await Promise.all([
+    env.DB.prepare("SELECT category FROM watched_categories").all<{ category: string }>(),
+    env.DB.prepare("SELECT COUNT(*) as n FROM papers").first<{ n: number }>(),
+    env.DB.prepare("SELECT COUNT(*) as n FROM papers WHERE review_status = 'done'").first<{ n: number }>(),
+  ]);
+
+  return htmlResponse(aboutPage({
+    categories: catRows.results.map(r => r.category),
+    paperCount: countRow?.n ?? 0,
+    reviewedCount: reviewedRow?.n ?? 0,
+  }));
 }
 
 async function handleFeed(url: URL, env: Env): Promise<Response> {
@@ -339,6 +330,7 @@ export default {
     const path = url.pathname;
 
     if (path === "/" && request.method === "GET") return handleFeed(url, env);
+    if (path === "/about" && request.method === "GET") return handleAbout(env);
 
     const detailMatch = path.match(/^\/paper\/([^/]+)$/);
     if (detailMatch && request.method === "GET")

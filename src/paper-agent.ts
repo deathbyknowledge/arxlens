@@ -310,9 +310,15 @@ export class PaperAgent extends Agent<Env, PaperState> {
     const reviewMatch = text.match(/REVIEW:\s*([\s\S]*?)$/i);
     const intro  = introMatch?.[1]?.trim()  ?? "";
     const review = reviewMatch?.[1]?.trim() ?? text;
+
+    // Reject empty reviews — model burned all tokens on reasoning
+    if (!intro && !review) {
+      throw new Error("model returned empty review (likely exhausted tokens on reasoning)");
+    }
+
     console.log(`[${this.state.id}] review done: intro=${intro.length}, review=${review.length} chars`);
     this.setState({ ...this.state, reviewStatus: "done", intro, review });
-    await this.syncStatusToD1("done");
+    await this.syncToD1({ review_status: "done", intro });
   }
 
 
@@ -344,10 +350,12 @@ export class PaperAgent extends Agent<Env, PaperState> {
   private async aiRun(messages: ChatMessage[], tools?: ToolDef[]): Promise<AiResponse> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw = await (this.env.AI.run as any)(MODEL, {
-      messages, max_tokens: 131072, ...(tools ? { tools } : {}),
+      messages, ...(tools ? { tools } : {}),
     });
     const msg = raw?.choices?.[0]?.message;
-    return { response: msg?.content ?? raw?.response ?? "", tool_calls: msg?.tool_calls ?? raw?.tool_calls };
+    // Kimi K2.5 sometimes puts the full answer in reasoning_content when content is null
+    const text = msg?.content ?? msg?.reasoning_content ?? raw?.response ?? "";
+    return { response: text, tool_calls: msg?.tool_calls ?? raw?.tool_calls };
   }
 
   private async executeTool(call: ToolCall): Promise<string> {
@@ -372,7 +380,7 @@ export class PaperAgent extends Agent<Env, PaperState> {
       { url: `https://arxiv.org/pdf/${meta.id}`, mime: "application/pdf", label: "arXiv PDF" },
     ];
 
-    const MAX_BODY = 20 * 1024 * 1024;
+    const MAX_BODY = 30 * 1024 * 1024;
 
     for (const source of sources) {
       try {
