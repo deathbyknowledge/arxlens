@@ -116,18 +116,13 @@ main {
   font-size: 11px;
   margin-right: 4px;
 }
-.paper-preview {
-  position: relative;
-}
 .paper-intro {
   font-size: 13px;
   color: #1f2328;
   line-height: 1.6;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
+.paper-intro p { margin-bottom: 4px; }
+.paper-intro p:last-child { margin-bottom: 0; }
 .paper-abstract {
   font-size: 13px;
   color: #3d444d;
@@ -137,30 +132,32 @@ main {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-/* Abstract tooltip: appears on hover over the preview area */
-.abstract-tooltip {
+/* Expand-in-place abstract toggle (pure CSS, no JS) */
+.abstract-toggle { display: none; }
+.abstract-expand {
   display: none;
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 100%;
-  z-index: 10;
-  padding-top: 6px;
-}
-.abstract-tooltip-inner {
-  background: #fff;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: #f6f8fa;
   border: 1px solid #d1d9e0;
-  border-radius: 8px;
-  padding: 12px 14px;
+  border-radius: 6px;
   font-size: 12px;
   color: #3d444d;
   line-height: 1.6;
   font-style: italic;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-  max-height: 200px;
-  overflow-y: auto;
 }
-.paper-preview:hover .abstract-tooltip { display: block; }
+.abstract-toggle:checked ~ .abstract-expand { display: block; }
+.abstract-toggle-label {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #0969da;
+  cursor: pointer;
+  user-select: none;
+}
+.abstract-toggle-label:hover { text-decoration: underline; }
+.abstract-toggle:checked ~ .abstract-toggle-label .toggle-show { display: none; }
+.abstract-toggle:not(:checked) ~ .abstract-toggle-label .toggle-hide { display: none; }
 .paper-footer {
   display: flex;
   align-items: center;
@@ -493,13 +490,13 @@ function paperCard(p: PaperRow): string {
         &middot;
         <span>${formatDate(p.published_at)}</span>
       </div>
-      <div class="paper-preview">
-        ${p.intro
-          ? `<div class="paper-intro">${escapeWithMath(p.intro)}</div>`
-          : `<div class="paper-abstract">${htmlEscape(p.abstract)}</div>`
-        }
-        <div class="abstract-tooltip"><div class="abstract-tooltip-inner">${htmlEscape(p.abstract)}</div></div>
-      </div>
+      ${p.intro
+        ? `<div class="paper-intro">${renderParagraphs(p.intro)}</div>`
+        : `<div class="paper-abstract">${htmlEscape(p.abstract)}</div>`
+      }
+      <input type="checkbox" class="abstract-toggle" id="abs-${htmlEscape(p.id)}">
+      <div class="abstract-expand">${htmlEscape(p.abstract)}</div>
+      <label class="abstract-toggle-label" for="abs-${htmlEscape(p.id)}"><span class="toggle-show">Show abstract</span><span class="toggle-hide">Hide abstract</span></label>
       <div class="paper-footer">
         ${aiStatus}
         <a href="${htmlEscape(p.arxiv_url)}" target="_blank" rel="noopener">arXiv</a>
@@ -773,11 +770,10 @@ You will receive the full text of an academic paper in Markdown.
 Produce exactly two sections:
 
 INTRO:
-Write 2-3 paragraphs explaining the paper for a smart non-specialist.
-  - What problem does it solve?
-  - What is the core idea or approach?
-  - Why does it matter and who should care?
-  Do NOT just paraphrase the abstract. Synthesize.
+Write 2-3 sentences explaining the paper for a smart non-specialist.
+  Cover: what problem it solves, the core idea, and why it matters.
+  Do NOT paraphrase the abstract. Synthesize in your own words.
+  Keep it concise \u2014 this will be shown as a preview in a feed card.
 
 REVIEW:
 Write 4-6 paragraphs of rigorous critical evaluation. Cover:

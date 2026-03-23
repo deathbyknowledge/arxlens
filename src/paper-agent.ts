@@ -60,11 +60,10 @@ You will receive the full text of an academic paper in Markdown.
 Produce exactly two sections:
 
 INTRO:
-Write 2-3 paragraphs explaining the paper for a smart non-specialist.
-  - What problem does it solve?
-  - What is the core idea or approach?
-  - Why does it matter and who should care?
-  Do NOT just paraphrase the abstract. Synthesize.
+Write 2-3 sentences explaining the paper for a smart non-specialist.
+  Cover: what problem it solves, the core idea, and why it matters.
+  Do NOT paraphrase the abstract. Synthesize in your own words.
+  Keep it concise — this will be shown as a preview in a feed card.
 
 REVIEW:
 Write 4-6 paragraphs of rigorous critical evaluation. Cover:
