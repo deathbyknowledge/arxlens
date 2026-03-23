@@ -1,0 +1,48 @@
+{
+  "name": "arxlens",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-02-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // Workers AI binding — remote:true so local dev calls the real API
+  "ai": { "binding": "AI", "remote": true },
+
+  // D1 database for the paper feed/index
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "arxlens-db",
+      "database_id": "REPLACE_WITH_D1_ID"
+    }
+  ],
+
+  // Queue: cron enqueues paper metadata, consumer routes to DOs
+  "queues": {
+    "producers": [{ "binding": "PAPER_QUEUE", "queue": "arxlens-papers" }],
+    "consumers": [{ "queue": "arxlens-papers", "max_batch_size": 10, "max_retries": 3 }]
+  },
+
+  // Durable Object for per-paper AI agent
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PAPER_AGENT",
+        "class_name": "PaperAgent"
+      }
+    ]
+  },
+
+  // SQLite-backed DO
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["PaperAgent"]
+    }
+  ],
+
+  // Daily at 3:30 UTC (~10:30pm ET, right after arXiv daily batch)
+  "triggers": {
+    "crons": ["30 3 * * *"]
+  }
+}
