@@ -22,6 +22,7 @@ import type {
   ChallengeData,
   ChallengeStance,
 } from "./types";
+import { PAPERS_TABLE, ensurePaperStore, normalizePaperMeta } from "./papers";
 
 const MODEL = "@cf/moonshotai/kimi-k2.5";
 
@@ -112,12 +113,17 @@ Requirements:
   - For every section except the intro, include 1-2 short direct quotes when possible.
   - Keep quotes exact and attributable. Use short locator strings like "Section 4.7", "Table 2", or "Badea et al., Sec. 3".
   - If a quote came from a fetched external source, include its URL.
+  - Keep every JSON string value on a single line. If you need paragraph breaks, encode them as \n\n inside the JSON string.
+  - Never emit raw newlines inside a JSON string value.
+  - Never emit chain-of-thought, <think> tags, XML tags, or prose before/after the JSON object.
   - Return JSON only. No markdown fences. No prose before or after the JSON.
 
 Formatting rules:
   - Use LaTeX for all math: inline $...$ and display $$...$$
   - When referencing equations, losses, metrics, or any mathematical content
     from the paper, reproduce them in LaTeX rather than describing them in words.
+  - Keep math inline and compact inside the JSON string, e.g. "$Q_i \in [0,1]$" or "$\\mathcal{G}_{exp}$".
+  - Never pretty-print symbols across multiple lines.
   - Write prose in plain text (not LaTeX). Only math goes in dollar signs.
 `;
 
@@ -161,10 +167,15 @@ Requirements:
   6. Include at least 1-2 direct quotes across the response when possible.
   7. Keep quotes exact and attributable with short locator strings.
   8. If a quote came from a fetched external source, include its URL.
-  9. Return JSON only. No markdown fences. No prose before or after the JSON.
+  9. Keep every JSON string value on a single line. If you need paragraph breaks, encode them as \n\n inside the JSON string.
+  10. Never emit raw newlines inside a JSON string value.
+  11. Never emit chain-of-thought, <think> tags, XML tags, or prose before/after the JSON object.
+  12. Return JSON only. No markdown fences. No prose before or after the JSON.
 
 Formatting rules:
   - Use LaTeX for math: inline $...$ and display $$...$$
+  - Keep math inline and compact inside the JSON string, e.g. "$Q_i \in [0,1]$".
+  - Never pretty-print symbols across multiple lines.
   - Write prose in plain text (not LaTeX). Only math goes in dollar signs.`;
 
 const FETCH_URL_TOOL: ToolDef = {
@@ -431,6 +442,77 @@ function challengeTextFromData(challengeData: ChallengeData): string {
     : challengeData.summary || sectionsText;
 }
 
+function parseLegacyReviewResponse(text: string): { intro: string; review: string } | null {
+  const introMatch = text.match(/INTRO:\s*([\s\S]*?)(?=REVIEW:|$)/i);
+  const reviewMatch = text.match(/REVIEW:\s*([\s\S]*?)$/i);
+  const intro = introMatch?.[1]?.trim() ?? "";
+  const review = reviewMatch?.[1]?.trim() ?? "";
+
+  if (!intro || !review) return null;
+  return { intro, review };
+}
+
+function invalidStructuredOutput(kind: "review" | "challenge", text: string): Error {
+  const sample = text.replace(/\s+/g, " ").slice(0, 240);
+  return new Error(`model returned invalid structured ${kind} output: ${sample}`);
+}
+
+function parseStructuredReviewResponse(text: string): {
+  intro: string;
+  review: string;
+  reviewData: ReviewData | null;
+} {
+  const jsonCandidate = extractJsonCandidate(text);
+  if (jsonCandidate) {
+    try {
+      const reviewData = normalizeReviewData(JSON.parse(jsonCandidate));
+      if (reviewData?.intro && reviewData.sections.length > 0) {
+        return {
+          intro: reviewData.intro,
+          review: reviewTextFromData(reviewData),
+          reviewData,
+        };
+      }
+    } catch {
+      // Fall through to legacy check or hard failure.
+    }
+  }
+
+  const legacy = parseLegacyReviewResponse(text);
+  if (legacy) {
+    return {
+      intro: legacy.intro,
+      review: legacy.review,
+      reviewData: null,
+    };
+  }
+
+  throw invalidStructuredOutput("review", text);
+}
+
+function parseStructuredChallengeResponse(text: string): {
+  text: string;
+  data: ChallengeData;
+} {
+  const jsonCandidate = extractJsonCandidate(text);
+  if (!jsonCandidate) {
+    throw invalidStructuredOutput("challenge", text);
+  }
+
+  try {
+    const data = normalizeChallengeData(JSON.parse(jsonCandidate));
+    if (!data?.summary || data.sections.length === 0) {
+      throw invalidStructuredOutput("challenge", text);
+    }
+    return {
+      text: challengeTextFromData(data),
+      data,
+    };
+  } catch {
+    throw invalidStructuredOutput("challenge", text);
+  }
+}
+
 export class PaperAgent extends Agent<Env, PaperState> {
   initialState: PaperState = {
     id: "",
@@ -470,14 +552,16 @@ export class PaperAgent extends Agent<Env, PaperState> {
 
   /** Called by the queue consumer. DO upserts its own D1 row and starts review. */
   async init(meta: PaperMeta): Promise<void> {
-    this.setMeta(meta);
-    await this.upsertD1Row(meta);
+    const normalizedMeta = normalizePaperMeta(meta);
+    await ensurePaperStore(this.env.DB);
+    this.setMeta(normalizedMeta);
+    await this.upsertD1Row(normalizedMeta);
 
     if (
       this.state.reviewStatus === "pending" ||
       this.state.reviewStatus === "error"
     ) {
-      await this.startReview(meta);
+      await this.startReview(normalizedMeta);
     }
   }
 
@@ -565,34 +649,79 @@ export class PaperAgent extends Agent<Env, PaperState> {
   // =========================================================================
 
   private async upsertD1Row(meta: PaperMeta): Promise<void> {
-    await this.env.DB.prepare(
-      `INSERT OR IGNORE INTO papers
-         (id, title, authors, abstract, categories, published_at, arxiv_url, pdf_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    await ensurePaperStore(this.env.DB);
+
+    const existing = await this.env.DB.prepare(
+      `SELECT versioned_id, votes_up, votes_down FROM ${PAPERS_TABLE} WHERE id = ?`
     )
-      .bind(
-        meta.id,
-        meta.title,
-        JSON.stringify(meta.authors),
-        meta.abstract,
-        JSON.stringify(meta.categories),
-        meta.publishedAt,
-        meta.arxivUrl,
-        meta.pdfUrl,
+      .bind(meta.id)
+      .first<{ versioned_id: string; votes_up: number; votes_down: number }>();
+
+    if (existing) {
+      this.setState({
+        ...this.state,
+        votesUp: existing.votes_up,
+        votesDown: existing.votes_down,
+      });
+    }
+
+    const versionChanged = !!existing && existing.versioned_id !== meta.versionedId;
+
+    if (!existing) {
+      await this.env.DB.prepare(
+        `INSERT INTO ${PAPERS_TABLE}
+           (id, version, versioned_id, title, authors, abstract, categories, published_at, arxiv_url, pdf_url)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run();
+        .bind(
+          meta.id,
+          meta.version,
+          meta.versionedId,
+          meta.title,
+          JSON.stringify(meta.authors),
+          meta.abstract,
+          JSON.stringify(meta.categories),
+          meta.publishedAt,
+          meta.arxivUrl,
+          meta.pdfUrl,
+        )
+        .run();
+      return;
+    }
+
+    const fields: Record<string, string | number> = {
+      version: meta.version,
+      versioned_id: meta.versionedId,
+      title: meta.title,
+      authors: JSON.stringify(meta.authors),
+      abstract: meta.abstract,
+      categories: JSON.stringify(meta.categories),
+      published_at: meta.publishedAt,
+      arxiv_url: meta.arxivUrl,
+      pdf_url: meta.pdfUrl,
+    };
+
+    if (versionChanged) {
+      fields.review_status = "pending";
+      fields.intro = "";
+      fields.fetched_at = Math.floor(Date.now() / 1000);
+    }
+
+    await this.syncToD1(fields, meta.id);
   }
 
   private async syncToD1(
     fields: Record<string, string | number>,
+    paperId?: string,
   ): Promise<void> {
-    const id = this.state.id;
+    await ensurePaperStore(this.env.DB);
+    const id = paperId ?? this.getMeta()?.id;
     if (!id) return;
     const setClauses = Object.keys(fields)
       .map((k) => `${k} = ?`)
       .join(", ");
     const values = Object.values(fields);
-    await this.env.DB.prepare(`UPDATE papers SET ${setClauses} WHERE id = ?`)
+    await this.env.DB.prepare(`UPDATE ${PAPERS_TABLE} SET ${setClauses} WHERE id = ?`)
       .bind(...values, id)
       .run();
   }
@@ -719,28 +848,7 @@ export class PaperAgent extends Agent<Env, PaperState> {
   }
 
   private async applyReview(text: string): Promise<void> {
-    let intro = "";
-    let review = "";
-    let reviewData: ReviewData | null = null;
-
-    const jsonCandidate = extractJsonCandidate(text);
-    if (jsonCandidate) {
-      try {
-        reviewData = normalizeReviewData(JSON.parse(jsonCandidate));
-      } catch (err) {
-        console.warn(`[${this.state.id}] failed to parse structured review JSON:`, err);
-      }
-    }
-
-    if (reviewData) {
-      intro = reviewData.intro;
-      review = reviewTextFromData(reviewData);
-    } else {
-      const introMatch = text.match(/INTRO:\s*([\s\S]*?)(?=REVIEW:|$)/i);
-      const reviewMatch = text.match(/REVIEW:\s*([\s\S]*?)$/i);
-      intro = introMatch?.[1]?.trim() ?? "";
-      review = reviewMatch?.[1]?.trim() ?? text;
-    }
+    const { intro, review, reviewData } = parseStructuredReviewResponse(text);
 
     // Reject empty reviews — model burned all tokens on reasoning
     if (!intro && !review) {
@@ -796,24 +904,9 @@ export class PaperAgent extends Agent<Env, PaperState> {
 
   private parseChallengeResponse(text: string): {
     text: string;
-    data: ChallengeData | null;
+    data: ChallengeData;
   } {
-    const jsonCandidate = extractJsonCandidate(text);
-    if (!jsonCandidate) {
-      return { text, data: null };
-    }
-
-    try {
-      const data = normalizeChallengeData(JSON.parse(jsonCandidate));
-      if (!data) return { text, data: null };
-      return {
-        text: challengeTextFromData(data),
-        data,
-      };
-    } catch (err) {
-      console.warn(`[${this.state.id}] failed to parse structured challenge JSON:`, err);
-      return { text, data: null };
-    }
+    return parseStructuredChallengeResponse(text);
   }
 
   private async aiRun(
@@ -828,7 +921,7 @@ export class PaperAgent extends Agent<Env, PaperState> {
         ...(tools ? { tools } : {}),
       },
       {
-        headers: {
+        extraHeaders: {
           "x-session-affinity": this.state.id,
         },
       },
@@ -863,12 +956,12 @@ export class PaperAgent extends Agent<Env, PaperState> {
   private async fetchPaperMarkdown(meta: PaperMeta): Promise<string> {
     const sources: Array<{ url: string; mime: string; label: string }> = [
       {
-        url: `https://arxiv.org/html/${meta.id}`,
+        url: `https://arxiv.org/html/${meta.versionedId}`,
         mime: "text/html",
         label: "arXiv HTML",
       },
       {
-        url: `https://arxiv.org/pdf/${meta.id}`,
+        url: `https://arxiv.org/pdf/${meta.versionedId}`,
         mime: "application/pdf",
         label: "arXiv PDF",
       },
@@ -997,9 +1090,10 @@ export class PaperAgent extends Agent<Env, PaperState> {
   }
 
   private setMeta(meta: PaperMeta): void {
+    const normalizedMeta = normalizePaperMeta(meta);
     this
-      .sql`INSERT OR REPLACE INTO meta (key, value) VALUES ('paper', ${JSON.stringify(meta)})`;
-    if (!this.state.id) this.setState({ ...this.state, id: meta.id });
+      .sql`INSERT OR REPLACE INTO meta (key, value) VALUES ('paper', ${JSON.stringify(normalizedMeta)})`;
+    if (!this.state.id) this.setState({ ...this.state, id: normalizedMeta.versionedId });
   }
   private getMeta(): PaperMeta | null {
     const r = [
@@ -1007,7 +1101,7 @@ export class PaperAgent extends Agent<Env, PaperState> {
         value: string;
       }>`SELECT value FROM meta WHERE key = 'paper'`,
     ][0];
-    return r ? (JSON.parse(r.value) as PaperMeta) : null;
+    return r ? normalizePaperMeta(JSON.parse(r.value) as PaperMeta) : null;
   }
 
   private hydrateChallenge(row: {

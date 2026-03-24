@@ -73,6 +73,6 @@
 
   // Daily at 3:30 UTC (~10:30pm ET, right after arXiv daily batch)
   "triggers": {
-    "crons": ["30 3 * * *"]
+    "crons": ["* */6 * * *"]
   }
 }

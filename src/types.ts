@@ -4,7 +4,9 @@
 
 /** Row shape in D1 `papers` table */
 export interface PaperRow {
-  id: string;
+  id: string;              // stable arXiv family id, e.g. "2401.12345"
+  version: string;         // current reviewed version, e.g. "v2"
+  versioned_id: string;    // exact reviewed version id, e.g. "2401.12345v2"
   title: string;
   authors: string;      // JSON string: string[]
   abstract: string;
@@ -73,7 +75,9 @@ export interface Challenge {
 
 /** Minimal paper metadata stored in the DO */
 export interface PaperMeta {
-  id: string;
+  id: string;          // stable arXiv family id
+  version: string;     // exact version reviewed / fetched
+  versionedId: string; // full versioned arXiv id
   title: string;
   authors: string[];
   abstract: string;

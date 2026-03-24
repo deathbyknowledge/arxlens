@@ -11,6 +11,13 @@
 import {getAgentByName} from "agents";
 import { feedPage, paperDetailPage, errorPage, aboutPage } from "./html";
 import type { PaperRow, PaperMeta, QueueMessage } from "./types";
+import {
+  PAPERS_TABLE,
+  compareArxivVersions,
+  composeVersionedId,
+  ensurePaperStore,
+  parseArxivId,
+} from "./papers";
 export { PaperAgent } from "./paper-agent";
 import { env } from "cloudflare:workers";
 
@@ -21,6 +28,9 @@ type FeedSort = "hot" | "new" | "top";
 const INGEST_RETRY_AFTER_SECONDS = 60;
 const CHALLENGE_RETRY_AFTER_SECONDS = 60;
 const VOTE_RETRY_AFTER_SECONDS = 60;
+const OAI_BASE_URL = "https://oaipmh.arxiv.org/oai";
+const OAI_METADATA_PREFIX = "arXivRaw";
+const INITIAL_HARVEST_LOOKBACK_DAYS = IS_DEV ? 1 : 2;
 
 function htmlResponse(html: string, status = 200): Response {
   return new Response(html, {
@@ -80,13 +90,7 @@ function normalizePaperLookup(input: string): string | null {
 }
 
 function normalizeArxivId(value: string): string | null {
-  const candidate = value.trim();
-  if (!candidate) return null;
-
-  if (/^\d{4}\.\d{4,5}(v\d+)?$/i.test(candidate)) return candidate;
-  if (/^[a-z-]+(?:\.[a-z-]+)?\/\d{7}(v\d+)?$/i.test(candidate)) return candidate;
-
-  return null;
+  return parseArxivId(value.trim())?.versionedId ?? null;
 }
 
 function wantsJsonResponse(request: Request): boolean {
@@ -129,69 +133,309 @@ function sleep(ms: number): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function scheduled(env: Env): Promise<void> {
+  await ensurePaperStore(env.DB);
+  await ensureHarvestStateTable(env);
+
   // Read watched categories from D1 (editable without redeploy)
   const catRows = await env.DB.prepare(
     "SELECT category FROM watched_categories",
   ).all<{ category: string }>();
   let categories = catRows.results.map((r) => r.category);
+  const uniquePapers = new Map<string, PaperMeta>();
+  const harvestDates = new Map<string, string>();
 
   // Dev: only first category
   if (IS_DEV) categories = categories.slice(0, 1);
 
   for (const cat of categories) {
     try {
-      await fetchAndEnqueue(cat);
-      await sleep(3500); // arXiv rate limit
+      const harvest = await harvestCategory(cat, env);
+      harvestDates.set(cat, harvest.responseDate);
+
+      for (const meta of harvest.papers) {
+        uniquePapers.set(meta.id, meta);
+      }
+
+      await sleep(1200);
     } catch (err) {
       console.error(`[cron] ${cat} failed:`, err);
     }
   }
-}
 
-async function fetchAndEnqueue(category: string): Promise<void> {
-  const pageSize = IS_DEV ? 2 : 100;
-  const label = `[cron${IS_DEV ? ":dev" : ""}]`;
-
-  // Load cursor: where we left off last run
-  const cursorRow = await env.DB.prepare(
-    "SELECT next_offset FROM cron_state WHERE category = ?"
-  ).bind(category).first<{ next_offset: number }>();
-  const start = cursorRow?.next_offset ?? 0;
-
-  const url =
-    `https://export.arxiv.org/api/query` +
-    `?search_query=cat:${encodeURIComponent(category)}` +
-    `&sortBy=submittedDate&sortOrder=descending` +
-    `&start=${start}&max_results=${pageSize}`;
-
-  const res = await fetchWithRetry(url);
-  const papers = parseArxivAtom(await res.text());
-
-  if (papers.length === 0) {
-    // Caught up — reset offset for the next daily batch
-    if (start > 0) {
-      await setCronOffset(category, 0);
-      console.log(`${label} ${category}: caught up, reset offset`);
-    } else {
-      console.log(`${label} ${category}: nothing new`);
-    }
+  if (uniquePapers.size === 0) {
+    await persistHarvestDates(harvestDates, env);
+    console.log(`[cron${IS_DEV ? ":dev" : ""}] no new OAI papers to enqueue`);
     return;
   }
 
-  // Enqueue all papers — DOs handle dedup (skip if already reviewing/done)
-  const messages = papers.map((meta) => ({ body: { paperId: meta.id, meta } }));
-  await env.PAPER_QUEUE.sendBatch(messages);
+  await enqueuePapers(Array.from(uniquePapers.values()), env);
+  await persistHarvestDates(harvestDates, env);
 
-  // Advance the cursor so the next run picks up the next page
-  await setCronOffset(category, start + papers.length);
-
-  console.log(`${label} ${category}: enqueued ${papers.length} (offset ${start}→${start + papers.length})`);
+  console.log(
+    `[cron${IS_DEV ? ":dev" : ""}] enqueued ${uniquePapers.size} unique papers from OAI`,
+  );
 }
 
-async function setCronOffset(category: string, offset: number): Promise<void> {
+async function harvestCategory(
+  category: string,
+  env: Env,
+): Promise<{ papers: PaperMeta[]; responseDate: string }> {
+  const label = `[cron${IS_DEV ? ":dev" : ""}]`;
+  const fromDate = await getHarvestFromDate(category, env);
+  const setSpec = categoryToOaiSetSpec(category);
+  const { papers, responseDate } = await fetchOaiRecords(setSpec, fromDate);
+  const newSubmissions = papers.filter(
+    (paper) => paper.publishedAt.slice(0, 10) >= fromDate,
+  );
+
+  await setHarvestDate(category, responseDate, env);
+
+  console.log(
+    `${label} ${category}: harvested ${papers.length} updated records and kept ${newSubmissions.length} new submissions via OAI from ${fromDate} -> ${responseDate}`,
+  );
+
+  return {
+    papers: newSubmissions,
+    responseDate,
+  };
+}
+
+async function ensureHarvestStateTable(env: Env): Promise<void> {
   await env.DB.prepare(
-    "INSERT OR REPLACE INTO cron_state (category, next_offset) VALUES (?, ?)"
-  ).bind(category, offset).run();
+    `CREATE TABLE IF NOT EXISTS harvest_state (
+      category TEXT PRIMARY KEY,
+      last_harvest_date TEXT NOT NULL,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    )`
+  ).run();
+}
+
+async function getHarvestFromDate(category: string, env: Env): Promise<string> {
+  const row = await env.DB.prepare(
+    "SELECT last_harvest_date FROM harvest_state WHERE category = ?"
+  ).bind(category).first<{ last_harvest_date: string }>();
+
+  return normalizeHarvestDate(row?.last_harvest_date) ?? initialHarvestDate();
+}
+
+async function setHarvestDate(
+  category: string,
+  responseDate: string,
+  env: Env,
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO harvest_state (category, last_harvest_date, updated_at)
+     VALUES (?, ?, unixepoch())
+     ON CONFLICT(category) DO UPDATE SET
+       last_harvest_date = excluded.last_harvest_date,
+       updated_at = excluded.updated_at`
+  ).bind(category, responseDate).run();
+}
+
+async function persistHarvestDates(
+  harvestDates: Map<string, string>,
+  env: Env,
+): Promise<void> {
+  for (const [category, responseDate] of harvestDates) {
+    await setHarvestDate(category, responseDate, env);
+  }
+}
+
+async function enqueuePapers(papers: PaperMeta[], env: Env): Promise<void> {
+  const chunkSize = 100;
+
+  for (let offset = 0; offset < papers.length; offset += chunkSize) {
+    const batch = papers.slice(offset, offset + chunkSize).map((meta) => ({
+      body: { paperId: meta.id, meta },
+    }));
+    await env.PAPER_QUEUE.sendBatch(batch);
+  }
+}
+
+function initialHarvestDate(): string {
+  const date = new Date();
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() - INITIAL_HARVEST_LOOKBACK_DAYS);
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeHarvestDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+function categoryToOaiSetSpec(category: string): string {
+  if (!category.includes(".")) return category;
+
+  const [archive, subject] = category.split(".", 2);
+  return `${archive}:${archive}:${subject.toUpperCase()}`;
+}
+
+async function fetchOaiRecords(
+  setSpec: string,
+  fromDate: string,
+): Promise<{ papers: PaperMeta[]; responseDate: string }> {
+  const papers = new Map<string, PaperMeta>();
+  let responseDate = fromDate;
+  let resumptionToken: string | null = null;
+
+  do {
+    const page = await fetchOaiPage(setSpec, fromDate, resumptionToken);
+    responseDate = page.responseDate;
+
+    for (const meta of page.papers) {
+      papers.set(meta.id, meta);
+    }
+
+    resumptionToken = page.resumptionToken;
+    if (resumptionToken) {
+      await sleep(500);
+    }
+  } while (resumptionToken);
+
+  return {
+    papers: Array.from(papers.values()),
+    responseDate,
+  };
+}
+
+async function fetchOaiPage(
+  setSpec: string,
+  fromDate: string,
+  resumptionToken: string | null,
+): Promise<{
+  papers: PaperMeta[];
+  responseDate: string;
+  resumptionToken: string | null;
+}> {
+  const url = new URL(OAI_BASE_URL);
+  url.searchParams.set("verb", "ListRecords");
+
+  if (resumptionToken) {
+    url.searchParams.set("resumptionToken", resumptionToken);
+  } else {
+    url.searchParams.set("metadataPrefix", OAI_METADATA_PREFIX);
+    url.searchParams.set("set", setSpec);
+    url.searchParams.set("from", fromDate);
+  }
+
+  const res = await fetchWithRetry(url.toString());
+  const xml = await res.text();
+  const responseDate = parseOaiResponseDate(xml) ?? fromDate;
+
+  if (xml.includes('code="noRecordsMatch"')) {
+    return {
+      papers: [],
+      responseDate,
+      resumptionToken: null,
+    };
+  }
+
+  const errorMatch = xml.match(/<error\b[^>]*code="([^"]+)"[^>]*>([\s\S]*?)<\/error>/i);
+  if (errorMatch) {
+    throw new Error(`OAI ${errorMatch[1]}: ${decodeXml(errorMatch[2].trim())}`);
+  }
+
+  return {
+    papers: parseOaiListRecords(xml),
+    responseDate,
+    resumptionToken: parseOaiResumptionToken(xml),
+  };
+}
+
+function parseOaiResponseDate(xml: string): string | null {
+  const value = extractTag(xml, "responseDate")?.trim();
+  if (!value) return null;
+  return value.slice(0, 10);
+}
+
+function parseOaiResumptionToken(xml: string): string | null {
+  const match = xml.match(/<resumptionToken\b[^>]*>([\s\S]*?)<\/resumptionToken>/i);
+  const token = match?.[1]?.trim();
+  return token ? decodeXml(token) : null;
+}
+
+function parseOaiListRecords(xml: string): PaperMeta[] {
+  const papers: PaperMeta[] = [];
+  const records = xml.match(/<record>([\s\S]*?)<\/record>/g) ?? [];
+
+  for (const record of records) {
+    const meta = parseOaiRecord(record);
+    if (meta) papers.push(meta);
+  }
+
+  return papers;
+}
+
+function parseOaiRecord(recordXml: string): PaperMeta | null {
+  const headerMatch = recordXml.match(/<header\b([^>]*)>([\s\S]*?)<\/header>/i);
+  if (!headerMatch || headerMatch[1].includes('status="deleted"')) {
+    return null;
+  }
+
+  const metadataXml = recordXml.match(/<metadata>([\s\S]*?)<\/metadata>/i)?.[1];
+  const rawXml = metadataXml?.match(/<arXivRaw\b[\s\S]*?>([\s\S]*?)<\/arXivRaw>/i)?.[1];
+  if (!rawXml) return null;
+
+  const baseId = decodeXml(extractTag(rawXml, "id") ?? "").trim();
+  const title = decodeXml(extractTag(rawXml, "title") ?? "").replace(/\s+/g, " ").trim();
+  const abstract = decodeXml(extractTag(rawXml, "abstract") ?? "").replace(/\s+/g, " ").trim();
+  const authors = splitOaiAuthors(decodeXml(extractTag(rawXml, "authors") ?? ""));
+  const categories = decodeXml(extractTag(rawXml, "categories") ?? "")
+    .split(/\s+/)
+    .map((category) => category.trim())
+    .filter(Boolean);
+  const versions = parseOaiVersions(rawXml);
+
+  if (!baseId || !title || !abstract || versions.length === 0) {
+    return null;
+  }
+
+  const publishedAt = versions[0].submittedAt;
+  const latest = versions[versions.length - 1];
+  const version = latest.version.toLowerCase();
+  const versionedId = composeVersionedId(baseId, version);
+
+  return {
+    id: baseId,
+    version,
+    versionedId,
+    title,
+    authors,
+    abstract,
+    categories,
+    publishedAt,
+    arxivUrl: `https://arxiv.org/abs/${versionedId}`,
+    pdfUrl: `https://arxiv.org/pdf/${versionedId}`,
+  };
+}
+
+function parseOaiVersions(rawXml: string): Array<{ version: string; submittedAt: string }> {
+  const versions: Array<{ version: string; submittedAt: string }> = [];
+  const matches = rawXml.matchAll(/<version\b[^>]*version="([^"]+)"[^>]*>([\s\S]*?)<\/version>/gi);
+
+  for (const match of matches) {
+    const submittedAt = extractTag(match[2], "date")?.trim();
+    if (!submittedAt) continue;
+
+    const parsedDate = new Date(decodeXml(submittedAt));
+    if (Number.isNaN(parsedDate.getTime())) continue;
+
+    versions.push({
+      version: match[1],
+      submittedAt: parsedDate.toISOString(),
+    });
+  }
+
+  return versions;
+}
+
+function splitOaiAuthors(value: string): string[] {
+  return value
+    .replace(/\s+and\s+/g, ", ")
+    .split(/\s*,\s*/)
+    .map((author) => author.trim())
+    .filter(Boolean);
 }
 
 async function fetchWithRetry(url: string): Promise<Response> {
@@ -199,23 +443,23 @@ async function fetchWithRetry(url: string): Promise<Response> {
     const res = await fetch(url, {
       headers: { "User-Agent": "arxlens/1.0 (https://arxlens.workers.dev)" },
     });
-    if (res.status !== 429) {
+    if (res.status !== 429 && res.status !== 503) {
       if (!res.ok) throw new Error(`arXiv API error ${res.status}`);
       return res;
     }
     const retryAfter = parseInt(res.headers.get("retry-after") ?? "0", 10);
     const wait = (retryAfter > 0 ? retryAfter : 10 * attempt) * 1000;
-    console.warn(`[cron] arXiv 429, waiting ${wait}ms (attempt ${attempt}/3)`);
+    console.warn(`[arxiv] ${res.status}, waiting ${wait}ms (attempt ${attempt}/3)`);
     await sleep(wait);
   }
-  throw new Error("arXiv: exhausted retries on 429");
+  throw new Error("arXiv: exhausted retries on throttled response");
 }
 
 async function handleAbout(env: Env): Promise<Response> {
   const [catRows, countRow, reviewedRow] = await Promise.all([
     env.DB.prepare("SELECT category FROM watched_categories").all<{ category: string }>(),
-    env.DB.prepare("SELECT COUNT(*) as n FROM papers").first<{ n: number }>(),
-    env.DB.prepare("SELECT COUNT(*) as n FROM papers WHERE review_status = 'done'").first<{ n: number }>(),
+    env.DB.prepare(`SELECT COUNT(*) as n FROM ${PAPERS_TABLE}`).first<{ n: number }>(),
+    env.DB.prepare(`SELECT COUNT(*) as n FROM ${PAPERS_TABLE} WHERE review_status = 'done'`).first<{ n: number }>(),
   ]);
 
   return htmlResponse(aboutPage({
@@ -250,7 +494,7 @@ async function handleFeed(url: URL, env: Env): Promise<Response> {
 
   if (selectedCategory) {
     whereClauses.push(
-      "EXISTS (SELECT 1 FROM json_each(papers.categories) WHERE json_each.value = ?)"
+      `EXISTS (SELECT 1 FROM json_each(${PAPERS_TABLE}.categories) WHERE json_each.value = ?)`
     );
     whereBindings.push(selectedCategory);
   }
@@ -271,10 +515,10 @@ async function handleFeed(url: URL, env: Env): Promise<Response> {
         : "CASE WHEN review_status = 'done' THEN 1 ELSE 0 END DESC, fetched_at DESC, (votes_up - votes_down) DESC";
 
   const [rows, countRow, catRows] = await Promise.all([
-    env.DB.prepare(`SELECT * FROM papers ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
+    env.DB.prepare(`SELECT * FROM ${PAPERS_TABLE} ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
       .bind(...whereBindings, PAGE_SIZE, offset)
       .all<PaperRow>(),
-    env.DB.prepare(`SELECT COUNT(*) as n FROM papers ${whereSql}`)
+    env.DB.prepare(`SELECT COUNT(*) as n FROM ${PAPERS_TABLE} ${whereSql}`)
       .bind(...whereBindings)
       .first<{ n: number }>(),
     env.DB.prepare("SELECT category FROM watched_categories ORDER BY category ASC")
@@ -308,19 +552,27 @@ async function handlePaperDetail(
   url: URL,
   env: Env,
 ): Promise<Response> {
-  let id = decodeURIComponent(rawId);
+  const requested = parseArxivId(decodeURIComponent(rawId));
+  if (!requested) {
+    return htmlResponse(errorPage(404, `Paper "${decodeURIComponent(rawId)}" not found on arXiv.`), 404);
+  }
 
-  let paper = await env.DB.prepare("SELECT * FROM papers WHERE id = ?")
+  let id = requested.baseId;
+
+  let paper = await env.DB.prepare(`SELECT * FROM ${PAPERS_TABLE} WHERE id = ?`)
     .bind(id)
     .first<PaperRow>();
 
+  const shouldRefreshRequestedVersion =
+    !!requested.version && (!paper || compareArxivVersions(requested.version, paper.version) > 0);
+
   // On-demand ingestion for papers not in our feed
-  if (!paper) {
+  if (!paper || shouldRefreshRequestedVersion) {
     const actorKey = rateLimitActorKey(request);
     const allowed = await shouldAllow(
       env.INGEST_LIMITER,
       `ingest:${actorKey}`,
-      `ingest:${id}`,
+      `ingest:${requested.versionedId}`,
     );
     if (!allowed) {
       return tooManyRequestsResponse(
@@ -330,18 +582,18 @@ async function handlePaperDetail(
       );
     }
 
-    const meta = await fetchPaperById(id);
+    const meta = await fetchPaperById(requested.versionedId);
     if (!meta)
       return htmlResponse(
-        errorPage(404, `Paper "${id}" not found on arXiv.`),
+        errorPage(404, `Paper "${requested.versionedId}" not found on arXiv.`),
         404,
       );
 
     // Init via RPC (DO will upsert its own D1 row)
-    const stub = await getAgentByName(env.PAPER_AGENT, meta.id);
+    const stub = await getAgentByName(env.PAPER_AGENT, meta.versionedId);
     await stub.init(meta);
 
-    if (meta.id !== id) {
+    if (decodeURIComponent(rawId) !== meta.id) {
       return Response.redirect(
         new URL(`/paper/${encodeURIComponent(meta.id)}`, url).toString(),
         303,
@@ -350,14 +602,21 @@ async function handlePaperDetail(
 
     id = meta.id;
 
-    paper = await env.DB.prepare("SELECT * FROM papers WHERE id = ?")
+    paper = await env.DB.prepare(`SELECT * FROM ${PAPERS_TABLE} WHERE id = ?`)
       .bind(meta.id)
       .first<PaperRow>();
     if (!paper)
       return htmlResponse(errorPage(500, "Failed to ingest paper."), 500);
   }
 
-  const stub = await getAgentByName(env.PAPER_AGENT, id);
+  if (decodeURIComponent(rawId) !== paper.id) {
+    return Response.redirect(
+      new URL(`/paper/${encodeURIComponent(paper.id)}`, url).toString(),
+      303,
+    );
+  }
+
+  const stub = await getAgentByName(env.PAPER_AGENT, paper.versioned_id);
   const { state: doState, challenges } = await stub.getState();
 
   return htmlResponse(
@@ -392,11 +651,17 @@ async function handleVote(
   reqUrl: URL,
   env: Env,
 ): Promise<Response> {
-  const id = decodeURIComponent(rawId);
+  const parsed = parseArxivId(decodeURIComponent(rawId));
+  const id = parsed?.baseId ?? decodeURIComponent(rawId);
   const formData = await request.formData();
   const dir = formData.get("dir") as "up" | "down";
   if (dir !== "up" && dir !== "down")
     return htmlResponse(errorPage(400, "Invalid vote."), 400);
+
+  const paper = await env.DB.prepare(`SELECT * FROM ${PAPERS_TABLE} WHERE id = ?`)
+    .bind(id)
+    .first<PaperRow>();
+  if (!paper) return htmlResponse(errorPage(404, "Paper not found."), 404);
 
   const actorKey = rateLimitActorKey(request);
   const allowed = await shouldAllow(
@@ -408,11 +673,11 @@ async function handleVote(
     return tooManyRequestsResponse(
       request,
       "You're voting too quickly. Give it a few seconds and try again.",
-      VOTE_RETRY_AFTER_SECONDS,
-    );
+        VOTE_RETRY_AFTER_SECONDS,
+      );
   }
 
-  const stub = await getAgentByName(env.PAPER_AGENT, id);
+  const stub = await getAgentByName(env.PAPER_AGENT, paper.versioned_id);
   const { votesUp, votesDown } = await stub.vote(dir);
 
   if (wantsJsonResponse(request)) {
@@ -437,11 +702,17 @@ async function handleChallenge(
   reqUrl: URL,
   env: Env,
 ): Promise<Response> {
-  const id = decodeURIComponent(rawId);
+  const parsed = parseArxivId(decodeURIComponent(rawId));
+  const id = parsed?.baseId ?? decodeURIComponent(rawId);
   const formData = await request.formData();
   const prompt = (formData.get("prompt") as string | null)?.trim();
   if (!prompt)
     return htmlResponse(errorPage(400, "Challenge prompt is required."), 400);
+
+  const paper = await env.DB.prepare(`SELECT * FROM ${PAPERS_TABLE} WHERE id = ?`)
+    .bind(id)
+    .first<PaperRow>();
+  if (!paper) return htmlResponse(errorPage(404, "Paper not found."), 404);
 
   const actorKey = rateLimitActorKey(request);
   const allowed = await shouldAllow(
@@ -453,11 +724,11 @@ async function handleChallenge(
     return tooManyRequestsResponse(
       request,
       "Too many challenge requests from this browser. Try again in a minute.",
-      CHALLENGE_RETRY_AFTER_SECONDS,
-    );
+        CHALLENGE_RETRY_AFTER_SECONDS,
+      );
   }
 
-  const stub = await getAgentByName(env.PAPER_AGENT, id);
+  const stub = await getAgentByName(env.PAPER_AGENT, paper.versioned_id);
   await stub.challenge(prompt);
 
   const redirectUrl = new URL(`/paper/${encodeURIComponent(id)}`, reqUrl);
@@ -482,6 +753,9 @@ function parseArxivAtom(xml: string): PaperMeta[] {
         ?.trim();
       if (!id) continue;
 
+      const parsedId = parseArxivId(id);
+      if (!parsedId) continue;
+
       const title = decodeXml(extractTag(entry, "title") ?? "").replace(
         /\s+/g,
         " ",
@@ -504,14 +778,16 @@ function parseArxivAtom(xml: string): PaperMeta[] {
         .filter((c) => c.includes("."));
 
       papers.push({
-        id,
+        id: parsedId.baseId,
+        version: parsedId.version ?? "v1",
+        versionedId: parsedId.versionedId,
         title,
         authors,
         abstract,
         categories,
         publishedAt: published,
-        arxivUrl: `https://arxiv.org/abs/${id}`,
-        pdfUrl: `https://arxiv.org/pdf/${id}`,
+        arxivUrl: `https://arxiv.org/abs/${parsedId.versionedId}`,
+        pdfUrl: `https://arxiv.org/pdf/${parsedId.versionedId}`,
       });
     } catch {
       /* skip malformed */
@@ -540,6 +816,8 @@ function decodeXml(s: string): string {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    await ensurePaperStore(env.DB);
+
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -566,17 +844,20 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
+    await ensurePaperStore(env.DB);
     ctx.waitUntil(scheduled(env));
   },
 
   async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {
+    await ensurePaperStore(env.DB);
+
     for (const msg of batch.messages) {
       try {
         const { meta } = msg.body;
-        const stub = await getAgentByName(env.PAPER_AGENT, meta.id);
+        const stub = await getAgentByName(env.PAPER_AGENT, meta.versionedId);
         await stub.init(meta);
         msg.ack();
-        console.log(`[queue] ${meta.id}: init ok`);
+        console.log(`[queue] ${meta.versionedId}: init ok`);
       } catch (err) {
         console.error(`[queue] ${msg.body.paperId} failed:`, err);
         msg.retry();

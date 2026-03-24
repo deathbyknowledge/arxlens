@@ -248,6 +248,17 @@ main {
   font-weight: 600;
   line-height: 1.2;
 }
+.version-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f6f8fa;
+  color: #57606a;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
 a.category:hover { text-decoration: none; background: #c2e7ff; }
 .paper-preview-label {
   margin-bottom: 6px;
@@ -898,6 +909,53 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
 const CLIENT_JS = `
 const RETENTION_KEY = 'arxlens:reader-state:v1';
 
+function stablePaperId(value) {
+  return String(value || '').trim().replace(/(v\d+)$/i, '');
+}
+
+function extractVersion(value) {
+  const match = String(value || '').trim().match(/(v\d+)$/i);
+  return match ? match[1].toLowerCase() : '';
+}
+
+function migrateIdMap(map) {
+  const next = {};
+
+  Object.entries(map || {}).forEach(([key, value]) => {
+    const stableId = stablePaperId(key);
+    if (!stableId) return;
+    next[stableId] = value;
+  });
+
+  return next;
+}
+
+function migrateSavedMap(map) {
+  const next = {};
+
+  Object.entries(map || {}).forEach(([key, value]) => {
+    if (!value || typeof value !== 'object') return;
+
+    const stableIdValue = stablePaperId(value.id || key);
+    if (!stableIdValue) return;
+
+    const versionedId = value.versionedId || value.id || key;
+    const href = typeof value.href === 'string' && value.href
+      ? value.href.replace(/\/paper\/[^/?#]+/, '/paper/' + encodeURIComponent(stableIdValue))
+      : '/paper/' + encodeURIComponent(stableIdValue);
+
+    next[stableIdValue] = {
+      ...value,
+      id: stableIdValue,
+      version: value.version || extractVersion(versionedId) || 'v1',
+      versionedId: versionedId,
+      href: href,
+    };
+  });
+
+  return next;
+}
+
 function loadReaderState() {
   const fallback = { saved: {}, seen: {}, read: {}, lastFeedVisit: 0 };
 
@@ -909,9 +967,9 @@ function loadReaderState() {
     if (!parsed || typeof parsed !== 'object') return fallback;
 
     return {
-      saved: parsed.saved && typeof parsed.saved === 'object' ? parsed.saved : {},
-      seen: parsed.seen && typeof parsed.seen === 'object' ? parsed.seen : {},
-      read: parsed.read && typeof parsed.read === 'object' ? parsed.read : {},
+      saved: parsed.saved && typeof parsed.saved === 'object' ? migrateSavedMap(parsed.saved) : {},
+      seen: parsed.seen && typeof parsed.seen === 'object' ? migrateIdMap(parsed.seen) : {},
+      read: parsed.read && typeof parsed.read === 'object' ? migrateIdMap(parsed.read) : {},
       lastFeedVisit: typeof parsed.lastFeedVisit === 'number' ? parsed.lastFeedVisit : 0,
     };
   } catch {
@@ -939,11 +997,13 @@ function escapeHtml(value) {
 function getPaperMeta(element) {
   if (!(element instanceof HTMLElement)) return null;
 
-  const id = element.dataset.paperId || '';
+  const id = stablePaperId(element.dataset.paperId || '');
   if (!id) return null;
 
   return {
     id: id,
+    version: element.dataset.paperVersion || 'v1',
+    versionedId: element.dataset.paperVersionedId || (id + (element.dataset.paperVersion || '')),
     title: element.dataset.paperTitle || '',
     href: element.dataset.paperHref || ('/paper/' + encodeURIComponent(id)),
     arxivUrl: element.dataset.paperArxiv || '',
@@ -960,6 +1020,8 @@ function getPaperMeta(element) {
 function normalizeSavedMeta(meta, savedAt) {
   return {
     id: meta.id,
+    version: meta.version || 'v1',
+    versionedId: meta.versionedId || (meta.id + (meta.version || '')),
     title: meta.title,
     href: meta.href,
     arxivUrl: meta.arxivUrl,
@@ -1131,6 +1193,9 @@ function buildSavedCard(savedPaper) {
     id: savedPaper.id,
     fetchedAt: savedPaper.fetchedAt || 0,
   });
+  const versionHtml = savedPaper.version
+    ? '<span class="version-chip">' + escapeHtml(savedPaper.version) + '</span>'
+    : '';
   const links = [];
 
   if (savedPaper.arxivUrl) {
@@ -1144,11 +1209,14 @@ function buildSavedCard(savedPaper) {
   links.push('<a href="' + escapeHtml(savedPaper.href || ('/paper/' + encodeURIComponent(savedPaper.id))) + '">Open paper</a>');
 
   const metaBits = [];
+  if (savedPaper.version) metaBits.push(versionHtml);
   if (savedPaper.authors) metaBits.push('<span>' + escapeHtml(savedPaper.authors) + '</span>');
   if (savedPaper.publishedLabel) metaBits.push('<span>' + escapeHtml(savedPaper.publishedLabel) + '</span>');
 
   return '<article class="paper-card saved-paper-card" ' +
     'data-paper-id="' + escapeHtml(savedPaper.id) + '" ' +
+    'data-paper-version="' + escapeHtml(savedPaper.version || 'v1') + '" ' +
+    'data-paper-versioned-id="' + escapeHtml(savedPaper.versionedId || (savedPaper.id + (savedPaper.version || ''))) + '" ' +
     'data-paper-title="' + escapeHtml(savedPaper.title || savedPaper.id) + '" ' +
     'data-paper-href="' + escapeHtml(savedPaper.href || ('/paper/' + encodeURIComponent(savedPaper.id))) + '" ' +
     'data-paper-arxiv="' + escapeHtml(savedPaper.arxivUrl || '') + '" ' +
@@ -1674,8 +1742,10 @@ function paperCard(p: PaperRow, categoryHref: (category: string) => string): str
     authors.slice(0, 3).join(", ") + (authors.length > 3 ? " et al." : "");
   const score = p.votes_up - p.votes_down;
   const abstractId = `abs-${p.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-  const previewText = compactPlainText(p.intro || p.abstract, 420);
+  const safeIntro = looksLikeStructuredLeak(p.intro) ? "" : p.intro;
+  const previewText = compactPlainText(safeIntro || p.abstract, 420);
   const detailHref = `/paper/${encodeURIComponent(p.id)}`;
+  const versionChip = `<span class="version-chip">${htmlEscape(p.version)}</span>`;
 
   const catBadges = categories
     .slice(0, 3)
@@ -1690,6 +1760,8 @@ function paperCard(p: PaperRow, categoryHref: (category: string) => string): str
   id="paper-${htmlEscape(p.id)}"
   data-paper-card
   data-paper-id="${htmlEscape(p.id)}"
+  data-paper-version="${htmlEscape(p.version)}"
+  data-paper-versioned-id="${htmlEscape(p.versioned_id)}"
   data-paper-title="${htmlEscape(p.title)}"
   data-paper-href="${htmlEscape(detailHref)}"
   data-paper-arxiv="${htmlEscape(p.arxiv_url)}"
@@ -1719,13 +1791,14 @@ function paperCard(p: PaperRow, categoryHref: (category: string) => string): str
       <div class="paper-title"><a href="${htmlEscape(detailHref)}">${htmlEscape(p.title)}</a></div>
       <div class="paper-meta">
         ${catBadges}
+        ${versionChip}
         <span>${htmlEscape(authorStr)}</span>
         &middot;
         <span>${formatDate(p.published_at)}</span>
       </div>
-      <div class="paper-preview-label">${p.intro ? "AI takeaway" : "Abstract preview"}</div>
-      ${p.intro
-        ? `<div class="paper-intro">${renderParagraphs(p.intro)}</div>`
+      <div class="paper-preview-label">${safeIntro ? "AI takeaway" : "Abstract preview"}</div>
+      ${safeIntro
+        ? `<div class="paper-intro">${renderParagraphs(safeIntro)}</div>`
         : `<div class="paper-abstract">${htmlEscape(p.abstract)}</div>`
       }
       <input type="checkbox" class="abstract-toggle" id="${abstractId}">
@@ -1765,7 +1838,10 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
   const authors = JSON.parse(paper.authors) as string[];
   const categories = JSON.parse(paper.categories) as string[];
   const score = paper.votes_up - paper.votes_down;
-  const previewText = compactPlainText(intro || paper.abstract, 420);
+  const safeIntro = looksLikeStructuredLeak(intro) ? "" : intro;
+  const safeReview = looksLikeStructuredLeak(review) ? "" : review;
+  const previewText = compactPlainText(safeIntro || paper.abstract, 420);
+  const versionChip = `<span class="version-chip">${htmlEscape(paper.version)}</span>`;
 
   const catBadges = categories
     .map((c) => `<a href="/?sort=hot&category=${encodeURIComponent(c)}" class="category">${htmlEscape(c)}</a>`)
@@ -1779,7 +1855,7 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
   <a href="#challenges" class="filter-chip">Challenges</a>
 </nav>`;
 
-  const summarySection = detailSummarySection(paper, intro, review, reviewData, reviewStatus);
+  const summarySection = detailSummarySection(paper, safeIntro, safeReview, reviewData, reviewStatus);
 
   const readerBar = `
 <div class="reader-bar">
@@ -1819,7 +1895,7 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
 </div>`;
 
   // AI review section
-  const reviewSection = reviewSectionHtml(reviewStatus, intro, review, reviewData);
+  const reviewSection = reviewSectionHtml(reviewStatus, safeIntro, safeReview, reviewData);
 
   // Challenge section
   const challengeSection = challengeSectionHtml(paper.id, challenges, challengeQueued);
@@ -1829,6 +1905,8 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
   class="paper-detail"
   data-paper-detail
   data-paper-id="${htmlEscape(paper.id)}"
+  data-paper-version="${htmlEscape(paper.version)}"
+  data-paper-versioned-id="${htmlEscape(paper.versioned_id)}"
   data-paper-title="${htmlEscape(paper.title)}"
   data-paper-href="/paper/${encodeURIComponent(paper.id)}"
   data-paper-arxiv="${htmlEscape(paper.arxiv_url)}"
@@ -1841,12 +1919,13 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
   data-paper-fetched-at="${paper.fetched_at}"
 >
   <nav style="font-size:13px;color:#656d76;margin-bottom:16px">
-    <a href="/">Feed</a> / <span>${htmlEscape(paper.id)}</span>
+    <a href="/">Feed</a> / <span>${htmlEscape(paper.id)}</span> ${versionChip}
   </nav>
 
   <h1 class="paper-detail-title">${htmlEscape(paper.title)}</h1>
   <div class="paper-detail-meta">
     ${catBadges}
+    ${versionChip}
     &nbsp;
     ${htmlEscape(authors.join(", "))}
     &middot; ${formatDate(paper.published_at)}
@@ -1878,6 +1957,7 @@ function detailSummarySection(
 ): string {
   const introBlocks = splitTextBlocks(intro);
   const resolvedReview = resolveReviewData(review, reviewData);
+  const missingReviewContent = reviewStatus === "done" && !intro && !review && !reviewData;
   const statusCopy: Record<string, string> = {
     pending: "The AI summary is queued. Use the abstract below while the full review gets ready.",
     reviewing: "The AI is still reading and checking this paper now. The first full critique will appear below shortly.",
@@ -1888,7 +1968,9 @@ function detailSummarySection(
   const introPrimary = introBlocks[0] ?? paper.abstract;
   const introSecondary = introBlocks[1] ?? (tailSentences(introPrimary, 2) || introPrimary);
   const mainConcern = getReviewSection(resolvedReview, "main_concerns")?.body;
-  const reviewPrimary = getReviewSection(resolvedReview, "verdict")?.body || mainConcern || statusCopy.done;
+  const reviewPrimary = missingReviewContent
+    ? "This cached review is malformed and should be regenerated."
+    : (getReviewSection(resolvedReview, "verdict")?.body || mainConcern || statusCopy.done);
 
   const cards = [
     {
@@ -1944,6 +2026,7 @@ function reviewSectionHtml(
     const resolvedReview = resolveReviewData(review, reviewData);
     const verdictSection = getReviewSection(resolvedReview, "verdict");
     const displaySections = resolvedReview.sections.filter((section) => section.key !== "verdict");
+    const missingReviewContent = !intro && !review && !reviewData;
     const introPrompt =
       "Please verify the evidence behind the AI's plain-language introduction for this paper. Quote the paper or cited sources directly.";
     const reviewPrompt =
@@ -1978,16 +2061,18 @@ function reviewSectionHtml(
          </div>`
       : (review ? renderParagraphs(review) : "");
 
-    const reviewHtml = review
+    const reviewHtml = review || reviewData
       ? `<div class="review-section-title">Critical review</div>
          ${verdictHtml}
          <div class="review-actions">
            ${challengePromptButton("Challenge this critique", reviewPrompt)}
            ${challengePromptButton("Check comparison fairness", comparisonPrompt)}
-          </div>
-          ${structuredReviewHtml}`
+           </div>
+           ${structuredReviewHtml}`
       : "";
-    body = introHtml + reviewHtml || "<p>Review content unavailable.</p>";
+    body = introHtml + reviewHtml || (missingReviewContent
+      ? "<p>Review content unavailable. This cached review should be regenerated.</p>"
+      : "<p>Review content unavailable.</p>");
   }
 
   return `
@@ -2287,12 +2372,17 @@ Requirements:
   - For every section except the intro, include 1-2 short direct quotes when possible.
   - Keep quotes exact and attributable. Use short locator strings like "Section 4.7", "Table 2", or "Badea et al., Sec. 3".
   - If a quote came from a fetched external source, include its URL.
+  - Keep every JSON string value on a single line. If you need paragraph breaks, encode them as \n\n inside the JSON string.
+  - Never emit raw newlines inside a JSON string value.
+  - Never emit chain-of-thought, <think> tags, XML tags, or prose before/after the JSON object.
   - Return JSON only. No markdown fences. No prose before or after the JSON.
 
 Formatting rules:
   - Use LaTeX for all math: inline $...$ and display $$...$$
   - When referencing equations, losses, metrics, or any mathematical content
     from the paper, reproduce them in LaTeX rather than describing them in words.
+  - Keep math inline and compact inside the JSON string, e.g. "$Q_i \in [0,1]$" or "$\\mathcal{G}_{exp}$".
+  - Never pretty-print symbols across multiple lines.
   - Write prose in plain text (not LaTeX). Only math goes in dollar signs.
 `;
 
@@ -2334,10 +2424,15 @@ Requirements:
   6. Include at least 1-2 direct quotes across the response when possible.
   7. Keep quotes exact and attributable with short locator strings.
   8. If a quote came from a fetched external source, include its URL.
-  9. Return JSON only. No markdown fences. No prose before or after the JSON.
+  9. Keep every JSON string value on a single line. If you need paragraph breaks, encode them as \n\n inside the JSON string.
+  10. Never emit raw newlines inside a JSON string value.
+  11. Never emit chain-of-thought, <think> tags, XML tags, or prose before/after the JSON object.
+  12. Return JSON only. No markdown fences. No prose before or after the JSON.
 
 Formatting rules:
   - Use LaTeX for math: inline $...$ and display $$...$$
+  - Keep math inline and compact inside the JSON string, e.g. "$Q_i \in [0,1]$".
+  - Never pretty-print symbols across multiple lines.
   - Write prose in plain text (not LaTeX). Only math goes in dollar signs.`;
 
 // ---------------------------------------------------------------------------
@@ -2377,6 +2472,19 @@ function compactPlainText(text: string, maxChars: number): string {
   const flat = text.replace(/\s+/g, " ").trim();
   if (flat.length <= maxChars) return flat;
   return `${flat.slice(0, maxChars).replace(/\s+\S*$/, "")}...`;
+}
+
+function looksLikeStructuredLeak(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+
+  return trimmed.includes("</think>") ||
+    trimmed.includes('"sections":') ||
+    trimmed.includes('"intro":') ||
+    trimmed.includes('"stance":') ||
+    trimmed.includes("Let me write the JSON") ||
+    trimmed.includes("I need to include LaTeX") ||
+    (/^\{[\s\S]*\}$/.test(trimmed) && trimmed.includes('"key"'));
 }
 
 function splitSentences(text: string): string[] {
