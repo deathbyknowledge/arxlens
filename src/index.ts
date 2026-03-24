@@ -18,10 +18,40 @@ const PAGE_SIZE = 20;
 const IS_DEV = env.DEV === "true";
 type FeedSort = "hot" | "new" | "top";
 
+const INGEST_RETRY_AFTER_SECONDS = 60;
+const CHALLENGE_RETRY_AFTER_SECONDS = 60;
+const VOTE_RETRY_AFTER_SECONDS = 60;
+
 function htmlResponse(html: string, status = 200): Response {
   return new Response(html, {
     status,
     headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
+}
+
+function tooManyRequestsResponse(
+  request: Request,
+  message: string,
+  retryAfterSeconds: number,
+): Response {
+  const headers = {
+    "Cache-Control": "no-store",
+    "Retry-After": String(retryAfterSeconds),
+  };
+
+  if (wantsJsonResponse(request)) {
+    return Response.json(
+      { error: message, retryAfter: retryAfterSeconds },
+      { status: 429, headers },
+    );
+  }
+
+  return new Response(errorPage(429, message), {
+    status: 429,
+    headers: {
+      ...headers,
+      "Content-Type": "text/html; charset=utf-8",
+    },
   });
 }
 
@@ -63,6 +93,31 @@ function wantsJsonResponse(request: Request): boolean {
   const accept = request.headers.get("accept") ?? "";
   const requestedWith = request.headers.get("x-requested-with") ?? "";
   return accept.includes("application/json") || requestedWith === "fetch";
+}
+
+function rateLimitActorKey(request: Request): string {
+  const forwardedFor = request.headers.get("x-forwarded-for")
+    ?.split(",")[0]
+    ?.trim();
+  const ip =
+    request.headers.get("cf-connecting-ip") ??
+    request.headers.get("x-real-ip") ??
+    forwardedFor ??
+    "local";
+
+  return ip || "local";
+}
+
+async function shouldAllow(
+  limiter: RateLimit,
+  key: string,
+  label: string,
+): Promise<boolean> {
+  const { success } = await limiter.limit({ key });
+  if (!success) {
+    console.warn(`[rate-limit] ${label} blocked for ${key}`);
+  }
+  return success;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -247,7 +302,12 @@ async function handleFeed(url: URL, env: Env): Promise<Response> {
   );
 }
 
-async function handlePaperDetail(rawId: string, url: URL, env: Env): Promise<Response> {
+async function handlePaperDetail(
+  rawId: string,
+  request: Request,
+  url: URL,
+  env: Env,
+): Promise<Response> {
   let id = decodeURIComponent(rawId);
 
   let paper = await env.DB.prepare("SELECT * FROM papers WHERE id = ?")
@@ -256,6 +316,20 @@ async function handlePaperDetail(rawId: string, url: URL, env: Env): Promise<Res
 
   // On-demand ingestion for papers not in our feed
   if (!paper) {
+    const actorKey = rateLimitActorKey(request);
+    const allowed = await shouldAllow(
+      env.INGEST_LIMITER,
+      `ingest:${actorKey}`,
+      `ingest:${id}`,
+    );
+    if (!allowed) {
+      return tooManyRequestsResponse(
+        request,
+        "Too many on-demand paper lookups from this browser. Try again in a minute.",
+        INGEST_RETRY_AFTER_SECONDS,
+      );
+    }
+
     const meta = await fetchPaperById(id);
     if (!meta)
       return htmlResponse(
@@ -324,6 +398,20 @@ async function handleVote(
   if (dir !== "up" && dir !== "down")
     return htmlResponse(errorPage(400, "Invalid vote."), 400);
 
+  const actorKey = rateLimitActorKey(request);
+  const allowed = await shouldAllow(
+    env.VOTE_LIMITER,
+    `vote:${actorKey}`,
+    `vote:${id}`,
+  );
+  if (!allowed) {
+    return tooManyRequestsResponse(
+      request,
+      "You're voting too quickly. Give it a few seconds and try again.",
+      VOTE_RETRY_AFTER_SECONDS,
+    );
+  }
+
   const stub = await getAgentByName(env.PAPER_AGENT, id);
   const { votesUp, votesDown } = await stub.vote(dir);
 
@@ -354,6 +442,20 @@ async function handleChallenge(
   const prompt = (formData.get("prompt") as string | null)?.trim();
   if (!prompt)
     return htmlResponse(errorPage(400, "Challenge prompt is required."), 400);
+
+  const actorKey = rateLimitActorKey(request);
+  const allowed = await shouldAllow(
+    env.CHALLENGE_LIMITER,
+    `challenge:${actorKey}`,
+    `challenge:${id}`,
+  );
+  if (!allowed) {
+    return tooManyRequestsResponse(
+      request,
+      "Too many challenge requests from this browser. Try again in a minute.",
+      CHALLENGE_RETRY_AFTER_SECONDS,
+    );
+  }
 
   const stub = await getAgentByName(env.PAPER_AGENT, id);
   await stub.challenge(prompt);
@@ -446,7 +548,7 @@ export default {
 
     const detailMatch = path.match(/^\/paper\/([^/]+)$/);
     if (detailMatch && request.method === "GET")
-      return handlePaperDetail(detailMatch[1], url, env);
+      return handlePaperDetail(detailMatch[1], request, url, env);
 
     const voteMatch = path.match(/^\/paper\/([^/]+)\/vote$/);
     if (voteMatch && request.method === "POST")

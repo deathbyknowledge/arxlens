@@ -13,7 +13,8 @@
     {
       "binding": "DB",
       "database_name": "arxlens-db",
-      "database_id": "REPLACE_WITH_D1_ID"
+      "id": "1b11132b-3729-429c-b6ea-3f62557436ea",
+      "database_id": "1b11132b-3729-429c-b6ea-3f62557436ea"
     }
   ],
 
@@ -32,6 +33,35 @@
       }
     ]
   },
+
+  // Burst protection for anonymous expensive actions.
+  // namespace_id values must be unique within the Cloudflare account.
+  "ratelimits": [
+    {
+      "name": "INGEST_LIMITER",
+      "namespace_id": "83101",
+      "simple": {
+        "limit": 6,
+        "period": 60
+      }
+    },
+    {
+      "name": "CHALLENGE_LIMITER",
+      "namespace_id": "83102",
+      "simple": {
+        "limit": 4,
+        "period": 60
+      }
+    },
+    {
+      "name": "VOTE_LIMITER",
+      "namespace_id": "83103",
+      "simple": {
+        "limit": 20,
+        "period": 60
+      }
+    }
+  ],
 
   // SQLite-backed DO
   "migrations": [

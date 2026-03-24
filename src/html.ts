@@ -23,9 +23,15 @@ body {
   color: #1f2328;
   background: #fff;
   line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
 }
 a { color: #0969da; text-decoration: none; }
 a:hover { text-decoration: underline; }
+button,
+input,
+textarea {
+  font: inherit;
+}
 
 /* Nav */
 header { border-bottom: 1px solid #d1d9e0; }
@@ -127,8 +133,14 @@ main {
 .feed-tabs,
 .feed-controls,
 .filter-group { display: flex; gap: 6px; flex-wrap: wrap; }
+.feed-reader-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .tab {
-  padding: 5px 12px;
+  min-height: 38px;
+  padding: 7px 14px;
   border: 1px solid #d1d9e0;
   border-radius: 6px;
   font-size: 12px;
@@ -144,7 +156,8 @@ main {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 5px 12px;
+  min-height: 38px;
+  padding: 7px 14px;
   border: 1px solid #d1d9e0;
   border-radius: 999px;
   font-size: 12px;
@@ -156,6 +169,12 @@ main {
 .filter-chip:hover { background: #f6f8fa; text-decoration: none; color: #1f2328; }
 .toggle.active,
 .filter-chip.active { background: #0969da; color: #fff; border-color: #0969da; }
+.toggle:disabled,
+.filter-chip:disabled,
+.paper-action:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
 .feed-results-bar {
   display: flex;
   align-items: center;
@@ -170,51 +189,66 @@ main {
 /* Paper card */
 .paper-card {
   border: 1px solid #d1d9e0;
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 16px 20px;
   margin-bottom: 12px;
   transition: border-color 0.1s;
 }
 .paper-card:hover { border-color: #0969da; }
+.paper-card.is-saved {
+  box-shadow: inset 0 0 0 1px #c6e6ff;
+}
 .paper-top { display: flex; gap: 16px; align-items: flex-start; }
-.vote-col { display: flex; flex-direction: column; align-items: center; gap: 4px; flex-shrink: 0; width: 48px; }
+.vote-col { display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0; width: 52px; }
 .vote-btn {
   background: none;
   border: 1px solid #d1d9e0;
-  border-radius: 4px;
-  width: 32px;
-  height: 28px;
+  border-radius: 10px;
+  width: 40px;
+  height: 40px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 16px;
   color: #656d76;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background 0.1s, border-color 0.1s;
+  touch-action: manipulation;
 }
 .vote-btn:hover { background: #f6f8fa; border-color: #0969da; color: #0969da; }
-.vote-count { font-size: 13px; font-weight: 600; color: #1f2328; }
+.vote-count { min-width: 28px; text-align: center; font-size: 16px; font-weight: 700; color: #1f2328; }
 .paper-body { flex: 1; min-width: 0; }
 .paper-title {
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 600;
   color: #1f2328;
-  margin-bottom: 4px;
-  line-height: 1.4;
+  margin-bottom: 6px;
+  line-height: 1.3;
 }
 .paper-title a { color: #1f2328; }
 .paper-title a:hover { color: #0969da; text-decoration: none; }
-.paper-meta { font-size: 12px; color: #656d76; margin-bottom: 8px; }
-.paper-meta .category {
-  display: inline-block;
+.paper-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #656d76;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+.category {
+  display: inline-flex;
+  align-items: center;
   background: #ddf4ff;
   color: #0550ae;
-  padding: 1px 6px;
-  border-radius: 3px;
+  padding: 3px 8px;
+  border-radius: 999px;
   font-size: 11px;
-  margin-right: 4px;
+  font-weight: 600;
+  line-height: 1.2;
 }
-.paper-meta a.category:hover { text-decoration: none; background: #c2e7ff; }
+a.category:hover { text-decoration: none; background: #c2e7ff; }
 .paper-preview-label {
   margin-bottom: 6px;
   font-size: 11px;
@@ -255,8 +289,10 @@ main {
 }
 .abstract-toggle:checked ~ .abstract-expand { display: block; }
 .abstract-toggle-label {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   margin-top: 6px;
+  min-height: 36px;
   font-size: 11px;
   color: #0969da;
   cursor: pointer;
@@ -273,6 +309,48 @@ main {
   margin-top: 10px;
   font-size: 12px;
   color: #656d76;
+}
+.retention-statuses,
+.paper-actions,
+.reader-actions,
+.reader-statuses {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.paper-actions {
+  margin-left: auto;
+}
+.retention-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.retention-chip.saved { background: #ddf4ff; color: #0550ae; }
+.retention-chip.read { background: #dafbe1; color: #116329; }
+.retention-chip.seen { background: #f6f8fa; color: #57606a; }
+.retention-chip.new { background: #fff8c5; color: #7d4e00; }
+.paper-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid #d1d9e0;
+  border-radius: 999px;
+  background: #fff;
+  color: #57606a;
+  cursor: pointer;
+  text-decoration: none;
+}
+.paper-action:hover {
+  background: #f6f8fa;
+  color: #1f2328;
 }
 .vote-status { color: #656d76; }
 .ai-badge {
@@ -294,6 +372,18 @@ main {
 .paper-detail-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; line-height: 1.3; }
 .paper-detail-meta { font-size: 13px; color: #656d76; margin-bottom: 16px; }
 .paper-links { display: flex; gap: 8px; margin-bottom: 24px; }
+.reader-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  border: 1px solid #d1d9e0;
+  border-radius: 12px;
+  background: #f6f8fa;
+}
 .detail-jumps {
   display: flex;
   flex-wrap: wrap;
@@ -330,14 +420,16 @@ main {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 14px;
+  min-height: 42px;
+  padding: 8px 14px;
   border: 1px solid #d1d9e0;
-  border-radius: 6px;
+  border-radius: 10px;
   font-size: 13px;
   color: #1f2328;
   background: #f6f8fa;
   cursor: pointer;
   text-decoration: none;
+  touch-action: manipulation;
 }
 .btn:hover { background: #eaeef2; text-decoration: none; }
 .btn-primary { background: #0969da; color: #fff; border-color: #0969da; }
@@ -458,7 +550,8 @@ main {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 12px;
+  min-height: 40px;
+  padding: 8px 14px;
   border: 1px solid #d1d9e0;
   border-radius: 999px;
   background: #fff;
@@ -525,6 +618,15 @@ main {
 
 /* Challenge thread */
 .challenge-thread { display: flex; flex-direction: column; gap: 12px; }
+.saved-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.saved-list[hidden],
+.client-empty[hidden] {
+  display: none;
+}
 .challenge-item {
   border: 1px solid #d1d9e0;
   border-radius: 6px;
@@ -643,7 +745,8 @@ main {
   margin-top: 24px;
 }
 .page-btn {
-  padding: 5px 10px;
+  min-height: 38px;
+  padding: 7px 12px;
   border: 1px solid #d1d9e0;
   border-radius: 5px;
   font-size: 13px;
@@ -672,15 +775,118 @@ main {
   .feed-title { font-size: 22px; }
   .lookup-form { width: 100%; }
   .lookup-row { flex-direction: column; }
+  .feed-toolbar {
+    align-items: stretch;
+  }
+  .feed-tabs,
+  .feed-controls {
+    width: 100%;
+  }
+  .feed-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .feed-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .feed-tabs .tab,
+  .feed-controls .toggle {
+    width: 100%;
+  }
+  .filter-group {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  .filter-group::-webkit-scrollbar { display: none; }
+  .feed-results-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .feed-reader-controls {
+    width: 100%;
+  }
+  .feed-reader-controls .toggle {
+    flex: 1 0 auto;
+  }
   .summary-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {
   .global-nav { padding: 0 16px; }
+  .nav-links { gap: 12px; }
   main { padding: 16px; }
-  .paper-top { flex-direction: column; }
-  .vote-col { flex-direction: row; width: auto; }
+  .paper-card {
+    padding: 16px;
+    border-radius: 14px;
+  }
+  .paper-top { flex-direction: column; gap: 12px; }
+  .vote-col {
+    order: 2;
+    flex-direction: row;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 10px;
+    margin-top: 2px;
+    padding-top: 12px;
+    border-top: 1px solid #d1d9e0;
+  }
+  .paper-title { font-size: 16px; }
+  .paper-meta {
+    gap: 8px;
+  }
+  .paper-footer {
+    gap: 8px 12px;
+  }
+  .paper-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+  .paper-links,
+  .detail-jumps {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .paper-links .btn,
+  .detail-jumps .filter-chip {
+    width: 100%;
+  }
   .detail-jumps { margin-bottom: 16px; }
+  .vote-bar {
+    justify-content: space-between;
+    padding: 14px;
+  }
+  .vote-spacer { display: none; }
+  .reader-bar,
+  .feed-reader-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .reader-actions,
+  .reader-statuses,
+  .paper-actions {
+    width: 100%;
+  }
+  .reader-actions .btn,
+  .paper-actions .paper-action {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  .section {
+    border-radius: 12px;
+  }
+  .section-header {
+    padding: 12px 14px;
+  }
+  .section-body {
+    padding: 14px;
+  }
+  .challenge-form textarea {
+    min-height: 120px;
+  }
   .paper-detail-title { font-size: 18px; }
 }
 `;
@@ -690,6 +896,449 @@ main {
 // ---------------------------------------------------------------------------
 
 const CLIENT_JS = `
+const RETENTION_KEY = 'arxlens:reader-state:v1';
+
+function loadReaderState() {
+  const fallback = { saved: {}, seen: {}, read: {}, lastFeedVisit: 0 };
+
+  try {
+    const raw = window.localStorage.getItem(RETENTION_KEY);
+    if (!raw) return fallback;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return fallback;
+
+    return {
+      saved: parsed.saved && typeof parsed.saved === 'object' ? parsed.saved : {},
+      seen: parsed.seen && typeof parsed.seen === 'object' ? parsed.seen : {},
+      read: parsed.read && typeof parsed.read === 'object' ? parsed.read : {},
+      lastFeedVisit: typeof parsed.lastFeedVisit === 'number' ? parsed.lastFeedVisit : 0,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function persistReaderState() {
+  try {
+    window.localStorage.setItem(RETENTION_KEY, JSON.stringify(readerState));
+  } catch {
+    // Ignore local persistence failures.
+  }
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function getPaperMeta(element) {
+  if (!(element instanceof HTMLElement)) return null;
+
+  const id = element.dataset.paperId || '';
+  if (!id) return null;
+
+  return {
+    id: id,
+    title: element.dataset.paperTitle || '',
+    href: element.dataset.paperHref || ('/paper/' + encodeURIComponent(id)),
+    arxivUrl: element.dataset.paperArxiv || '',
+    pdfUrl: element.dataset.paperPdf || '',
+    authors: element.dataset.paperAuthors || '',
+    publishedLabel: element.dataset.paperDateLabel || '',
+    categories: (element.dataset.paperCategories || '').split('|').filter(Boolean),
+    preview: element.dataset.paperPreview || '',
+    reviewStatus: element.dataset.paperReviewStatus || '',
+    fetchedAt: Number(element.dataset.paperFetchedAt || '0'),
+  };
+}
+
+function normalizeSavedMeta(meta, savedAt) {
+  return {
+    id: meta.id,
+    title: meta.title,
+    href: meta.href,
+    arxivUrl: meta.arxivUrl,
+    pdfUrl: meta.pdfUrl,
+    authors: meta.authors,
+    publishedLabel: meta.publishedLabel,
+    categories: Array.isArray(meta.categories) ? meta.categories.slice(0, 8) : [],
+    preview: (meta.preview || '').slice(0, 600),
+    reviewStatus: meta.reviewStatus || '',
+    fetchedAt: meta.fetchedAt || 0,
+    savedAt: typeof savedAt === 'number' ? savedAt : Date.now(),
+  };
+}
+
+function savePaperMeta(meta, savedAt) {
+  readerState.saved[meta.id] = normalizeSavedMeta(meta, savedAt);
+}
+
+function isSaved(id) {
+  return !!readerState.saved[id];
+}
+
+function isSeen(id) {
+  return !!readerState.seen[id];
+}
+
+function isRead(id) {
+  return !!readerState.read[id];
+}
+
+const feedShell = document.querySelector('[data-feed-shell]');
+const detailRoot = document.querySelector('[data-paper-detail]');
+const feedCardsContainer = document.querySelector('[data-feed-cards]');
+const savedList = document.querySelector('[data-saved-list]');
+const clientEmpty = document.querySelector('[data-client-empty]');
+const clientEmptyTitle = document.querySelector('[data-client-empty-title]');
+const clientEmptyBody = document.querySelector('[data-client-empty-body]');
+const feedResults = document.querySelector('[data-feed-results]');
+const feedNote = document.querySelector('[data-feed-note]');
+const feedPagination = document.querySelector('[data-feed-pagination]');
+const readerState = loadReaderState();
+const previousFeedVisit = feedShell ? (readerState.lastFeedVisit || 0) : 0;
+let activeClientFilter = null;
+
+function isNewPaper(meta) {
+  return !!previousFeedVisit && meta.fetchedAt > 0 && meta.fetchedAt * 1000 > previousFeedVisit;
+}
+
+function getPaperElements() {
+  return Array.from(document.querySelectorAll('[data-paper-id]'));
+}
+
+function getFeedCards() {
+  return Array.from(document.querySelectorAll('[data-feed-cards] [data-paper-card]'));
+}
+
+function formatCount(count, singular, plural) {
+  return String(count) + ' ' + (count === 1 ? singular : plural);
+}
+
+function aiStatusBadgeHtml(status) {
+  const normalized = status || 'pending';
+  const map = {
+    pending: ['pending', 'Queued'],
+    reviewing: ['reviewing', 'Reviewing...'],
+    done: ['done', 'AI reviewed'],
+    error: ['error', 'Review failed'],
+  };
+  const entry = map[normalized] || map.pending;
+  return '<span class="ai-badge ' + entry[0] + '">' + entry[1] + '</span>';
+}
+
+function renderRetentionStatuses(meta) {
+  const chips = [];
+
+  if (isNewPaper(meta)) chips.push('<span class="retention-chip new">New</span>');
+  if (isSaved(meta.id)) chips.push('<span class="retention-chip saved">Saved</span>');
+
+  if (isRead(meta.id)) {
+    chips.push('<span class="retention-chip read">Read</span>');
+  } else if (isSeen(meta.id)) {
+    chips.push('<span class="retention-chip seen">Seen</span>');
+  }
+
+  return chips.join('');
+}
+
+function updatePaperElement(element) {
+  const meta = getPaperMeta(element);
+  if (!meta) return;
+
+  element.classList.toggle('is-saved', isSaved(meta.id));
+  element.classList.toggle('is-read', isRead(meta.id));
+  element.classList.toggle('is-seen', isSeen(meta.id) && !isRead(meta.id));
+  element.classList.toggle('is-new', isNewPaper(meta));
+
+  element.querySelectorAll('[data-retention-statuses]').forEach((target) => {
+    if (target instanceof HTMLElement) target.innerHTML = renderRetentionStatuses(meta);
+  });
+
+  element.querySelectorAll('[data-save-toggle]').forEach((target) => {
+    if (!(target instanceof HTMLButtonElement)) return;
+    target.textContent = isSaved(meta.id) ? 'Saved' : 'Save for later';
+    target.setAttribute('aria-pressed', isSaved(meta.id) ? 'true' : 'false');
+  });
+
+  element.querySelectorAll('[data-read-toggle]').forEach((target) => {
+    if (!(target instanceof HTMLButtonElement)) return;
+    target.textContent = isRead(meta.id) ? 'Mark unread' : 'Mark read';
+    target.setAttribute('aria-pressed', isRead(meta.id) ? 'true' : 'false');
+  });
+
+  if (isSaved(meta.id)) {
+    const savedAt = readerState.saved[meta.id] && readerState.saved[meta.id].savedAt;
+    savePaperMeta(meta, savedAt);
+  }
+}
+
+function updateAllPaperElements() {
+  getPaperElements().forEach(updatePaperElement);
+}
+
+function markSeen(meta) {
+  if (!meta || isSeen(meta.id)) return;
+  readerState.seen[meta.id] = Date.now();
+  persistReaderState();
+  updateAllPaperElements();
+}
+
+function setReadState(meta, shouldRead) {
+  if (!meta) return;
+
+  if (shouldRead) {
+    const now = Date.now();
+    readerState.read[meta.id] = now;
+    readerState.seen[meta.id] = readerState.seen[meta.id] || now;
+  } else {
+    delete readerState.read[meta.id];
+  }
+
+  persistReaderState();
+  updateAllPaperElements();
+  renderSavedList();
+}
+
+function toggleSaved(meta) {
+  if (!meta) return;
+
+  if (isSaved(meta.id)) {
+    delete readerState.saved[meta.id];
+  } else {
+    savePaperMeta(meta, Date.now());
+  }
+
+  persistReaderState();
+  updateAllPaperElements();
+  renderSavedList();
+  updateClientFilterButtons();
+  applyClientFilters();
+}
+
+function buildCategoryHtml(categories) {
+  return categories.map((category) => '<span class="category">' + escapeHtml(category) + '</span>').join('');
+}
+
+function buildSavedCard(savedPaper) {
+  const categoriesHtml = buildCategoryHtml(savedPaper.categories || []);
+  const statusHtml = renderRetentionStatuses({
+    id: savedPaper.id,
+    fetchedAt: savedPaper.fetchedAt || 0,
+  });
+  const links = [];
+
+  if (savedPaper.arxivUrl) {
+    links.push('<a href="' + escapeHtml(savedPaper.arxivUrl) + '" target="_blank" rel="noopener">arXiv</a>');
+  }
+
+  if (savedPaper.pdfUrl) {
+    links.push('<a href="' + escapeHtml(savedPaper.pdfUrl) + '" target="_blank" rel="noopener">PDF</a>');
+  }
+
+  links.push('<a href="' + escapeHtml(savedPaper.href || ('/paper/' + encodeURIComponent(savedPaper.id))) + '">Open paper</a>');
+
+  const metaBits = [];
+  if (savedPaper.authors) metaBits.push('<span>' + escapeHtml(savedPaper.authors) + '</span>');
+  if (savedPaper.publishedLabel) metaBits.push('<span>' + escapeHtml(savedPaper.publishedLabel) + '</span>');
+
+  return '<article class="paper-card saved-paper-card" ' +
+    'data-paper-id="' + escapeHtml(savedPaper.id) + '" ' +
+    'data-paper-title="' + escapeHtml(savedPaper.title || savedPaper.id) + '" ' +
+    'data-paper-href="' + escapeHtml(savedPaper.href || ('/paper/' + encodeURIComponent(savedPaper.id))) + '" ' +
+    'data-paper-arxiv="' + escapeHtml(savedPaper.arxivUrl || '') + '" ' +
+    'data-paper-pdf="' + escapeHtml(savedPaper.pdfUrl || '') + '" ' +
+    'data-paper-authors="' + escapeHtml(savedPaper.authors || '') + '" ' +
+    'data-paper-date-label="' + escapeHtml(savedPaper.publishedLabel || '') + '" ' +
+    'data-paper-categories="' + escapeHtml((savedPaper.categories || []).join('|')) + '" ' +
+    'data-paper-preview="' + escapeHtml(savedPaper.preview || '') + '" ' +
+    'data-paper-review-status="' + escapeHtml(savedPaper.reviewStatus || '') + '" ' +
+    'data-paper-fetched-at="' + escapeHtml(String(savedPaper.fetchedAt || 0)) + '">' +
+      '<div class="paper-title"><a href="' + escapeHtml(savedPaper.href || ('/paper/' + encodeURIComponent(savedPaper.id))) + '">' + escapeHtml(savedPaper.title || savedPaper.id) + '</a></div>' +
+      '<div class="paper-meta">' + categoriesHtml + metaBits.join(' &middot; ') + '</div>' +
+      '<div class="paper-preview-label">Saved for later</div>' +
+      '<div class="paper-intro"><p>' + escapeHtml(savedPaper.preview || 'Open this paper to revisit it later.') + '</p></div>' +
+      '<div class="paper-footer">' +
+        (savedPaper.reviewStatus ? aiStatusBadgeHtml(savedPaper.reviewStatus) : '') +
+        '<span class="retention-statuses" data-retention-statuses>' + statusHtml + '</span>' +
+        '<div class="paper-actions">' +
+          '<button type="button" class="paper-action" data-save-toggle>Saved</button>' +
+          '<button type="button" class="paper-action" data-read-toggle>' + (isRead(savedPaper.id) ? 'Mark unread' : 'Mark read') + '</button>' +
+          links.join('') +
+        '</div>' +
+      '</div>' +
+    '</article>';
+}
+
+function renderSavedList() {
+  if (!(savedList instanceof HTMLElement)) return 0;
+
+  const savedPapers = Object.values(readerState.saved).sort((left, right) => {
+    return (right.savedAt || 0) - (left.savedAt || 0);
+  });
+
+  savedList.innerHTML = savedPapers.map(buildSavedCard).join('');
+  Array.from(savedList.querySelectorAll('[data-paper-id]')).forEach(updatePaperElement);
+  return savedPapers.length;
+}
+
+function setClientEmpty(title, body) {
+  if (!(clientEmpty instanceof HTMLElement)) return;
+  clientEmpty.hidden = false;
+  if (clientEmptyTitle instanceof HTMLElement) clientEmptyTitle.textContent = title;
+  if (clientEmptyBody instanceof HTMLElement) clientEmptyBody.textContent = body;
+}
+
+function clearClientEmpty() {
+  if (clientEmpty instanceof HTMLElement) clientEmpty.hidden = true;
+}
+
+function updateFeedSummary(resultsText, noteText) {
+  if (feedResults instanceof HTMLElement) {
+    feedResults.textContent = resultsText || feedResults.dataset.defaultText || '';
+  }
+
+  if (feedNote instanceof HTMLElement) {
+    feedNote.textContent = noteText || feedNote.dataset.defaultText || '';
+  }
+}
+
+function updateClientFilterButtons() {
+  const buttons = Array.from(document.querySelectorAll('[data-client-filter]'));
+  const newCount = previousFeedVisit
+    ? getFeedCards().filter((card) => {
+        const meta = getPaperMeta(card);
+        return !!meta && isNewPaper(meta);
+      }).length
+    : 0;
+  const savedCount = Object.keys(readerState.saved).length;
+
+  buttons.forEach((button) => {
+    if (!(button instanceof HTMLButtonElement)) return;
+
+    const filterName = button.dataset.clientFilter || '';
+    const active = activeClientFilter === filterName;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+
+    if (filterName === 'saved') {
+      button.textContent = savedCount > 0 ? 'Saved (' + savedCount + ')' : 'Saved';
+      button.disabled = false;
+      return;
+    }
+
+    if (filterName === 'new') {
+      button.textContent = newCount > 0 ? 'Only new (' + newCount + ')' : 'Only new';
+      button.disabled = !previousFeedVisit;
+    }
+  });
+}
+
+function applyClientFilters() {
+  if (!(feedCardsContainer instanceof HTMLElement)) return;
+
+  const cards = getFeedCards();
+  let visibleCount = 0;
+
+  if (activeClientFilter === 'saved') {
+    const savedCount = renderSavedList();
+
+    feedCardsContainer.hidden = true;
+    if (savedList instanceof HTMLElement) savedList.hidden = false;
+    if (feedPagination instanceof HTMLElement) feedPagination.hidden = true;
+
+    if (savedCount === 0) {
+      setClientEmpty('No saved papers yet', 'Save a paper to come back to it later on this browser.');
+    } else {
+      clearClientEmpty();
+    }
+
+    updateFeedSummary(
+      formatCount(savedCount, 'saved paper', 'saved papers'),
+      'Saved for later lives in this browser for now.',
+    );
+    return;
+  }
+
+  if (savedList instanceof HTMLElement) savedList.hidden = true;
+  feedCardsContainer.hidden = false;
+  if (feedPagination instanceof HTMLElement) feedPagination.hidden = false;
+
+  cards.forEach((card) => {
+    const meta = getPaperMeta(card);
+    const shouldShow = activeClientFilter !== 'new' || (!!meta && isNewPaper(meta));
+    card.hidden = !shouldShow;
+    if (shouldShow) visibleCount += 1;
+  });
+
+  if (activeClientFilter === 'new') {
+    if (visibleCount === 0) {
+      setClientEmpty('Nothing new yet', 'No papers on this page were added since your last visit.');
+    } else {
+      clearClientEmpty();
+    }
+
+    updateFeedSummary(
+      formatCount(visibleCount, 'paper since your last visit', 'papers since your last visit'),
+      'New is based on when a paper reached this feed.',
+    );
+    return;
+  }
+
+  clearClientEmpty();
+  updateFeedSummary('', '');
+}
+
+function initializeSeenTracking() {
+  const cards = getFeedCards();
+  if (cards.length === 0) return;
+
+  if (!('IntersectionObserver' in window)) {
+    cards.slice(0, 4).forEach((card) => {
+      const meta = getPaperMeta(card);
+      if (meta) markSeen(meta);
+    });
+    return;
+  }
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      const meta = getPaperMeta(entry.target);
+      if (meta) markSeen(meta);
+      observer.unobserve(entry.target);
+    });
+  }, {
+    threshold: 0.55,
+  });
+
+  cards.forEach((card) => observer.observe(card));
+}
+
+if (feedShell) {
+  readerState.lastFeedVisit = Date.now();
+  persistReaderState();
+}
+
+renderSavedList();
+updateAllPaperElements();
+updateClientFilterButtons();
+applyClientFilters();
+
+if (feedShell) {
+  initializeSeenTracking();
+}
+
+if (detailRoot) {
+  const detailMeta = getPaperMeta(detailRoot);
+  if (detailMeta) setReadState(detailMeta, true);
+}
+
 document.addEventListener("submit", async (event) => {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
@@ -727,7 +1376,17 @@ document.addEventListener("submit", async (event) => {
       },
     });
 
-    if (!response.ok) throw new Error("vote failed");
+    if (!response.ok) {
+      if (response.status === 429) {
+        const data = await response.json().catch(() => null);
+        if (liveRegion instanceof HTMLElement) {
+          liveRegion.textContent = data && data.error ? data.error : 'You are voting too quickly. Try again soon.';
+        }
+        return;
+      }
+
+      throw new Error("vote failed");
+    }
 
     const data = await response.json();
     const score = voteRoot.querySelector("[data-vote-score]");
@@ -757,6 +1416,34 @@ document.addEventListener("submit", async (event) => {
 document.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof Element)) return;
+
+  const saveToggle = target.closest('[data-save-toggle]');
+  if (saveToggle instanceof HTMLElement) {
+    const paperRoot = saveToggle.closest('[data-paper-id]');
+    const meta = getPaperMeta(paperRoot);
+    if (meta) toggleSaved(meta);
+    event.preventDefault();
+    return;
+  }
+
+  const readToggle = target.closest('[data-read-toggle]');
+  if (readToggle instanceof HTMLElement) {
+    const paperRoot = readToggle.closest('[data-paper-id]');
+    const meta = getPaperMeta(paperRoot);
+    if (meta) setReadState(meta, !isRead(meta.id));
+    event.preventDefault();
+    return;
+  }
+
+  const filterToggle = target.closest('[data-client-filter]');
+  if (filterToggle instanceof HTMLButtonElement && !filterToggle.disabled) {
+    const filterName = filterToggle.dataset.clientFilter || '';
+    activeClientFilter = activeClientFilter === filterName ? null : filterName;
+    updateClientFilterButtons();
+    applyClientFilters();
+    event.preventDefault();
+    return;
+  }
 
   const trigger = target.closest("[data-challenge-prompt]");
   if (!(trigger instanceof HTMLElement)) return;
@@ -892,7 +1579,7 @@ export function feedPage(opts: FeedOptions): string {
 <div class="feed-header">
   <div class="feed-lede">
     <div>
-      <div class="feed-title">AI-reviewed papers from arXiv</div>
+      <div class="feed-title">Your paper timeline</div>
       <div class="feed-subtitle">Scroll AI takes the way you would scroll a great paper aggregator: quick signal first, deeper critique when something earns your attention, and challenges when a claim feels off.</div>
     </div>
     <form method="GET" action="/" class="lookup-form">
@@ -927,9 +1614,13 @@ export function feedPage(opts: FeedOptions): string {
     <a href="${feedHref({ selectedCategory: null })}" class="filter-chip${!selectedCategory ? " active" : ""}">All categories</a>
     ${categories.map((category) => `<a href="${feedHref({ selectedCategory: category })}" class="filter-chip${selectedCategory === category ? " active" : ""}">${htmlEscape(category)}</a>`).join("")}
   </div>
+  <div class="feed-reader-controls" data-reader-controls>
+    <button type="button" class="toggle" data-client-filter="saved">Saved</button>
+    <button type="button" class="toggle" data-client-filter="new">Only new</button>
+  </div>
   <div class="feed-results-bar">
-    <div class="feed-results">${htmlEscape(resultsLabel)}</div>
-    <div class="feed-note">${htmlEscape(sortNote)}</div>
+    <div class="feed-results" data-feed-results data-default-text="${htmlEscape(resultsLabel)}">${htmlEscape(resultsLabel)}</div>
+    <div class="feed-note" data-feed-note data-default-text="${htmlEscape(sortNote)}">${htmlEscape(sortNote)}</div>
     ${hasFilters ? `<a href="${feedHref({ selectedCategory: null, reviewedOnly: false })}" class="feed-clear">Clear filters</a>` : ""}
   </div>
 </div>`;
@@ -946,7 +1637,7 @@ export function feedPage(opts: FeedOptions): string {
   const pagination =
     totalPages <= 1
       ? ""
-      : `<div class="pagination">
+      : `<div class="pagination" data-feed-pagination>
           ${page > 1 ? `<a href="${feedHref({ page: page - 1 })}" class="page-btn">Prev</a>` : '<span class="page-btn disabled">Prev</span>'}
           ${Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
             const p = i + 1;
@@ -956,7 +1647,24 @@ export function feedPage(opts: FeedOptions): string {
           ${page < totalPages ? `<a href="${feedHref({ page: page + 1 })}" class="page-btn">Next</a>` : '<span class="page-btn disabled">Next</span>'}
         </div>`;
 
-  return layout("Feed", `<div class="feed-shell">${header}${cards}${pagination}</div>`, "feed");
+  const clientEmpty = `<div class="empty client-empty" data-client-empty hidden>
+    <h3 data-client-empty-title>Nothing here yet</h3>
+    <p data-client-empty-body></p>
+  </div>`;
+
+  return layout(
+    "Feed",
+    `<div class="feed-shell" data-feed-shell>
+      ${header}
+      <div class="saved-list" data-saved-list hidden></div>
+      ${clientEmpty}
+      <div data-feed-cards>
+        ${cards}
+      </div>
+      ${pagination}
+    </div>`,
+    "feed",
+  );
 }
 
 function paperCard(p: PaperRow, categoryHref: (category: string) => string): string {
@@ -966,6 +1674,8 @@ function paperCard(p: PaperRow, categoryHref: (category: string) => string): str
     authors.slice(0, 3).join(", ") + (authors.length > 3 ? " et al." : "");
   const score = p.votes_up - p.votes_down;
   const abstractId = `abs-${p.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  const previewText = compactPlainText(p.intro || p.abstract, 420);
+  const detailHref = `/paper/${encodeURIComponent(p.id)}`;
 
   const catBadges = categories
     .slice(0, 3)
@@ -975,7 +1685,23 @@ function paperCard(p: PaperRow, categoryHref: (category: string) => string): str
   const aiStatus = aiStatusBadge(p.review_status);
 
   return `
-<div class="paper-card" id="paper-${htmlEscape(p.id)}" data-vote-card>
+<div
+  class="paper-card"
+  id="paper-${htmlEscape(p.id)}"
+  data-paper-card
+  data-paper-id="${htmlEscape(p.id)}"
+  data-paper-title="${htmlEscape(p.title)}"
+  data-paper-href="${htmlEscape(detailHref)}"
+  data-paper-arxiv="${htmlEscape(p.arxiv_url)}"
+  data-paper-pdf="${htmlEscape(p.pdf_url)}"
+  data-paper-authors="${htmlEscape(authorStr)}"
+  data-paper-date-label="${htmlEscape(formatDate(p.published_at))}"
+  data-paper-categories="${htmlEscape(categories.join("|"))}"
+  data-paper-preview="${htmlEscape(previewText)}"
+  data-paper-review-status="${htmlEscape(p.review_status)}"
+  data-paper-fetched-at="${p.fetched_at}"
+  data-vote-card
+>
   <span class="sr-only" aria-live="polite" data-vote-message></span>
   <div class="paper-top">
     <div class="vote-col">
@@ -990,7 +1716,7 @@ function paperCard(p: PaperRow, categoryHref: (category: string) => string): str
       </form>
     </div>
     <div class="paper-body">
-      <div class="paper-title"><a href="/paper/${htmlEscape(p.id)}">${htmlEscape(p.title)}</a></div>
+      <div class="paper-title"><a href="${htmlEscape(detailHref)}">${htmlEscape(p.title)}</a></div>
       <div class="paper-meta">
         ${catBadges}
         <span>${htmlEscape(authorStr)}</span>
@@ -1007,9 +1733,13 @@ function paperCard(p: PaperRow, categoryHref: (category: string) => string): str
       <label class="abstract-toggle-label" for="${abstractId}"><span class="toggle-show">Read abstract</span><span class="toggle-hide">Hide abstract</span></label>
       <div class="paper-footer">
         ${aiStatus}
+        <span class="retention-statuses" data-retention-statuses></span>
         <span class="vote-status" data-vote-summary>${p.votes_up} up &middot; ${p.votes_down} down</span>
-        <a href="${htmlEscape(p.arxiv_url)}" target="_blank" rel="noopener">arXiv</a>
-        <a href="${htmlEscape(p.pdf_url)}" target="_blank" rel="noopener">PDF</a>
+        <div class="paper-actions">
+          <button type="button" class="paper-action" data-save-toggle>Save for later</button>
+          <a href="${htmlEscape(p.arxiv_url)}" target="_blank" rel="noopener">arXiv</a>
+          <a href="${htmlEscape(p.pdf_url)}" target="_blank" rel="noopener">PDF</a>
+        </div>
       </div>
     </div>
   </div>
@@ -1035,6 +1765,7 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
   const authors = JSON.parse(paper.authors) as string[];
   const categories = JSON.parse(paper.categories) as string[];
   const score = paper.votes_up - paper.votes_down;
+  const previewText = compactPlainText(intro || paper.abstract, 420);
 
   const catBadges = categories
     .map((c) => `<a href="/?sort=hot&category=${encodeURIComponent(c)}" class="category">${htmlEscape(c)}</a>`)
@@ -1049,6 +1780,15 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
 </nav>`;
 
   const summarySection = detailSummarySection(paper, intro, review, reviewData, reviewStatus);
+
+  const readerBar = `
+<div class="reader-bar">
+  <div class="reader-statuses" data-retention-statuses></div>
+  <div class="reader-actions">
+    <button type="button" class="btn" data-save-toggle>Save for later</button>
+    <button type="button" class="btn" data-read-toggle>Mark unread</button>
+  </div>
+</div>`;
 
   // Vote bar
   const voteBar = `
@@ -1085,7 +1825,21 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
   const challengeSection = challengeSectionHtml(paper.id, challenges, challengeQueued);
 
   const content = `
-<div class="paper-detail">
+<div
+  class="paper-detail"
+  data-paper-detail
+  data-paper-id="${htmlEscape(paper.id)}"
+  data-paper-title="${htmlEscape(paper.title)}"
+  data-paper-href="/paper/${encodeURIComponent(paper.id)}"
+  data-paper-arxiv="${htmlEscape(paper.arxiv_url)}"
+  data-paper-pdf="${htmlEscape(paper.pdf_url)}"
+  data-paper-authors="${htmlEscape(authors.join(", "))}"
+  data-paper-date-label="${htmlEscape(formatDate(paper.published_at))}"
+  data-paper-categories="${htmlEscape(categories.join("|"))}"
+  data-paper-preview="${htmlEscape(previewText)}"
+  data-paper-review-status="${htmlEscape(reviewStatus)}"
+  data-paper-fetched-at="${paper.fetched_at}"
+>
   <nav style="font-size:13px;color:#656d76;margin-bottom:16px">
     <a href="/">Feed</a> / <span>${htmlEscape(paper.id)}</span>
   </nav>
@@ -1103,6 +1857,7 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
     <a href="${htmlEscape(paper.pdf_url)}" target="_blank" rel="noopener" class="btn">PDF</a>
   </div>
 
+  ${readerBar}
   ${sectionNav}
   ${summarySection}
   ${voteBar}
@@ -1613,6 +2368,12 @@ function splitTextBlocks(text: string): string[] {
 }
 
 function summarizeBlock(text: string, maxChars: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= maxChars) return flat;
+  return `${flat.slice(0, maxChars).replace(/\s+\S*$/, "")}...`;
+}
+
+function compactPlainText(text: string, maxChars: number): string {
   const flat = text.replace(/\s+/g, " ").trim();
   if (flat.length <= maxChars) return flat;
   return `${flat.slice(0, maxChars).replace(/\s+\S*$/, "")}...`;
