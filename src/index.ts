@@ -16,12 +16,53 @@ import { env } from "cloudflare:workers";
 
 const PAGE_SIZE = 20;
 const IS_DEV = env.DEV === "true";
+type FeedSort = "hot" | "new" | "top";
 
 function htmlResponse(html: string, status = 200): Response {
   return new Response(html, {
     status,
     headers: { "Content-Type": "text/html; charset=utf-8" },
   });
+}
+
+function isFeedSort(value: string | null): value is FeedSort {
+  return value === "hot" || value === "new" || value === "top";
+}
+
+function normalizePaperLookup(input: string): string | null {
+  const raw = input.trim();
+  if (!raw) return null;
+
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.replace(/^www\./, "").toLowerCase();
+    if (host === "arxiv.org") {
+      const match = url.pathname.match(/^\/(?:abs|pdf|html)\/(.+)$/);
+      if (match) {
+        return normalizeArxivId(match[1].replace(/\.pdf$/i, ""));
+      }
+    }
+  } catch {
+    // Fall back to raw ID parsing.
+  }
+
+  return normalizeArxivId(raw.replace(/^arxiv:/i, ""));
+}
+
+function normalizeArxivId(value: string): string | null {
+  const candidate = value.trim();
+  if (!candidate) return null;
+
+  if (/^\d{4}\.\d{4,5}(v\d+)?$/i.test(candidate)) return candidate;
+  if (/^[a-z-]+(?:\.[a-z-]+)?\/\d{7}(v\d+)?$/i.test(candidate)) return candidate;
+
+  return null;
+}
+
+function wantsJsonResponse(request: Request): boolean {
+  const accept = request.headers.get("accept") ?? "";
+  const requestedWith = request.headers.get("x-requested-with") ?? "";
+  return accept.includes("application/json") || requestedWith === "fetch";
 }
 
 function sleep(ms: number): Promise<void> {
@@ -130,23 +171,65 @@ async function handleAbout(env: Env): Promise<Response> {
 }
 
 async function handleFeed(url: URL, env: Env): Promise<Response> {
-  const sort = (url.searchParams.get("sort") ?? "hot") as "hot" | "new" | "top";
+  const lookupValue = (url.searchParams.get("paper") ?? "").trim();
+  if (lookupValue) {
+    const paperId = normalizePaperLookup(lookupValue);
+    if (paperId) {
+      return Response.redirect(
+        new URL(`/paper/${encodeURIComponent(paperId)}`, url).toString(),
+        303,
+      );
+    }
+  }
+
+  const sort = isFeedSort(url.searchParams.get("sort"))
+    ? (url.searchParams.get("sort") as FeedSort)
+    : "hot";
+  const selectedCategory = (url.searchParams.get("category") ?? "").trim();
+  const reviewedOnly = url.searchParams.get("reviewed") === "1";
   const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10));
   const offset = (page - 1) * PAGE_SIZE;
+
+  const whereClauses: string[] = [];
+  const whereBindings: Array<string | number> = [];
+
+  if (selectedCategory) {
+    whereClauses.push(
+      "EXISTS (SELECT 1 FROM json_each(papers.categories) WHERE json_each.value = ?)"
+    );
+    whereBindings.push(selectedCategory);
+  }
+
+  if (reviewedOnly) {
+    whereClauses.push("review_status = 'done'");
+  }
+
+  const whereSql = whereClauses.length > 0
+    ? `WHERE ${whereClauses.join(" AND ")}`
+    : "";
 
   const orderBy =
     sort === "new"
       ? "published_at DESC"
       : sort === "top"
         ? "(votes_up - votes_down) DESC"
-        : "(votes_up - votes_down) DESC, fetched_at DESC";
+        : "CASE WHEN review_status = 'done' THEN 1 ELSE 0 END DESC, fetched_at DESC, (votes_up - votes_down) DESC";
 
-  const [rows, countRow] = await Promise.all([
-    env.DB.prepare(`SELECT * FROM papers ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
-      .bind(PAGE_SIZE, offset)
+  const [rows, countRow, catRows] = await Promise.all([
+    env.DB.prepare(`SELECT * FROM papers ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
+      .bind(...whereBindings, PAGE_SIZE, offset)
       .all<PaperRow>(),
-    env.DB.prepare(`SELECT COUNT(*) as n FROM papers`).first<{ n: number }>(),
+    env.DB.prepare(`SELECT COUNT(*) as n FROM papers ${whereSql}`)
+      .bind(...whereBindings)
+      .first<{ n: number }>(),
+    env.DB.prepare("SELECT category FROM watched_categories ORDER BY category ASC")
+      .all<{ category: string }>(),
   ]);
+
+  const categories = catRows.results.map((row) => row.category);
+  if (selectedCategory && !categories.includes(selectedCategory)) {
+    categories.unshift(selectedCategory);
+  }
 
   return htmlResponse(
     feedPage({
@@ -155,12 +238,17 @@ async function handleFeed(url: URL, env: Env): Promise<Response> {
       page,
       total: countRow?.n ?? 0,
       pageSize: PAGE_SIZE,
+      categories,
+      selectedCategory,
+      reviewedOnly,
+      lookupValue,
+      lookupError: lookupValue ? `Couldn't understand "${lookupValue}". Paste an arXiv URL or paper ID.` : "",
     }),
   );
 }
 
-async function handlePaperDetail(rawId: string, env: Env): Promise<Response> {
-  const id = decodeURIComponent(rawId);
+async function handlePaperDetail(rawId: string, url: URL, env: Env): Promise<Response> {
+  let id = decodeURIComponent(rawId);
 
   let paper = await env.DB.prepare("SELECT * FROM papers WHERE id = ?")
     .bind(id)
@@ -179,8 +267,17 @@ async function handlePaperDetail(rawId: string, env: Env): Promise<Response> {
     const stub = await getAgentByName(env.PAPER_AGENT, meta.id);
     await stub.init(meta);
 
+    if (meta.id !== id) {
+      return Response.redirect(
+        new URL(`/paper/${encodeURIComponent(meta.id)}`, url).toString(),
+        303,
+      );
+    }
+
+    id = meta.id;
+
     paper = await env.DB.prepare("SELECT * FROM papers WHERE id = ?")
-      .bind(id)
+      .bind(meta.id)
       .first<PaperRow>();
     if (!paper)
       return htmlResponse(errorPage(500, "Failed to ingest paper."), 500);
@@ -194,8 +291,10 @@ async function handlePaperDetail(rawId: string, env: Env): Promise<Response> {
       paper,
       intro: doState?.intro ?? "",
       review: doState?.review ?? "",
+      reviewData: doState?.reviewData ?? null,
       reviewStatus: doState?.reviewStatus ?? paper.review_status,
       challenges,
+      challengeQueued: url.searchParams.get("challenge") === "queued",
     }),
   );
 }
@@ -226,7 +325,16 @@ async function handleVote(
     return htmlResponse(errorPage(400, "Invalid vote."), 400);
 
   const stub = await getAgentByName(env.PAPER_AGENT, id);
-  await stub.vote(dir);
+  const { votesUp, votesDown } = await stub.vote(dir);
+
+  if (wantsJsonResponse(request)) {
+    return Response.json({
+      dir,
+      votesUp,
+      votesDown,
+      score: votesUp - votesDown,
+    });
+  }
 
   return Response.redirect(
     new URL(`/paper/${encodeURIComponent(id)}`, reqUrl).toString(),
@@ -250,8 +358,12 @@ async function handleChallenge(
   const stub = await getAgentByName(env.PAPER_AGENT, id);
   await stub.challenge(prompt);
 
+  const redirectUrl = new URL(`/paper/${encodeURIComponent(id)}`, reqUrl);
+  redirectUrl.searchParams.set("challenge", "queued");
+  redirectUrl.hash = "challenges";
+
   return Response.redirect(
-    new URL(`/paper/${encodeURIComponent(id)}`, reqUrl).toString(),
+    redirectUrl.toString(),
     303,
   );
 }
@@ -334,7 +446,7 @@ export default {
 
     const detailMatch = path.match(/^\/paper\/([^/]+)$/);
     if (detailMatch && request.method === "GET")
-      return handlePaperDetail(detailMatch[1], env);
+      return handlePaperDetail(detailMatch[1], url, env);
 
     const voteMatch = path.match(/^\/paper\/([^/]+)\/vote$/);
     if (voteMatch && request.method === "POST")

@@ -20,11 +20,43 @@ export interface PaperRow {
 }
 
 /** State synced into the PaperAgent DO via setState() */
+export interface ReviewCitation {
+  source: string;
+  locator: string;
+  quote: string;
+  url?: string;
+}
+
+export interface ReviewSectionData {
+  key: string;
+  title: string;
+  body: string;
+  citations: ReviewCitation[];
+}
+
+export interface ReviewData {
+  intro: string;
+  sections: ReviewSectionData[];
+}
+
+export type ChallengeStance =
+  | "agree"
+  | "partially_agree"
+  | "disagree"
+  | "inconclusive";
+
+export interface ChallengeData {
+  stance: ChallengeStance;
+  summary: string;
+  sections: ReviewSectionData[];
+}
+
 export interface PaperState {
   id: string;
   reviewStatus: "pending" | "reviewing" | "done" | "error";
   intro: string;    // plain-language introduction
   review: string;   // critical AI review
+  reviewData: ReviewData | null;
   votesUp: number;
   votesDown: number;
 }
@@ -34,6 +66,8 @@ export interface Challenge {
   id: number;
   user_prompt: string;
   ai_response: string;
+  response_data: ChallengeData | null;
+  status: "pending" | "running" | "done" | "error";
   created_at: number; // unix epoch
 }
 
