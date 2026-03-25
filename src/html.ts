@@ -10,6 +10,7 @@ import type {
   ReviewSectionData,
   ReviewCitation,
 } from "./types";
+import type { InviteCodeStatus, InviteSummary, Viewer } from "./auth";
 
 // ---------------------------------------------------------------------------
 // Shared CSS
@@ -47,10 +48,50 @@ header { border-bottom: 1px solid #d1d9e0; }
 .logo { font-weight: 700; font-size: 16px; color: #1f2328; letter-spacing: -0.5px; }
 .logo:hover { text-decoration: none; }
 .logo span { color: #0969da; }
+.nav-side {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
 .nav-links { display: flex; gap: 20px; font-size: 13px; color: #656d76; }
 .nav-links a { color: #656d76; }
 .nav-links a.active,
 .nav-links a:hover { color: #1f2328; text-decoration: none; }
+.nav-auth {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.nav-user {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid #d1d9e0;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2328;
+  font-weight: 600;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nav-user.active {
+  background: #ddf4ff;
+  border-color: #0969da;
+  color: #0550ae;
+  text-decoration: none;
+}
+.nav-logout {
+  border: 0;
+  background: none;
+  color: #656d76;
+  cursor: pointer;
+  padding: 0;
+}
+.nav-logout:hover { color: #1f2328; }
 
 /* Main layout */
 main {
@@ -64,16 +105,10 @@ main {
 .feed-header {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #d1d9e0;
+  gap: 18px;
 }
-.feed-lede {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
+.feed-copy {
+  max-width: 70ch;
 }
 .feed-title {
   font-size: 28px;
@@ -82,98 +117,231 @@ main {
   letter-spacing: -0.03em;
 }
 .feed-subtitle {
-  max-width: 62ch;
   margin-top: 6px;
   font-size: 14px;
   color: #656d76;
   line-height: 1.7;
 }
-.lookup-form {
+.feed-command-bar {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  width: min(100%, 360px);
-  padding: 14px;
+  gap: 14px;
+  padding: 14px 16px;
   border: 1px solid #d1d9e0;
-  border-radius: 8px;
+  border-radius: 14px;
   background: #f6f8fa;
 }
-.lookup-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #656d76;
-}
-.lookup-row { display: flex; gap: 8px; }
-.lookup-input {
-  width: 100%;
-  min-width: 0;
-  padding: 9px 12px;
-  border: 1px solid #d1d9e0;
-  border-radius: 6px;
-  background: #fff;
-  font: inherit;
-  color: #1f2328;
-}
-.lookup-input:focus {
-  outline: none;
-  border-color: #0969da;
-  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
-}
-.field-help { font-size: 12px; color: #656d76; }
-.form-error { font-size: 12px; color: #82071e; }
-.feed-toolbar {
+.feed-command-top,
+.feed-command-bottom {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
 }
-.feed-tabs,
-.feed-controls,
-.filter-group { display: flex; gap: 6px; flex-wrap: wrap; }
+.feed-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.lookup-form {
+  flex: 1 1 360px;
+  max-width: 440px;
+}
+.lookup-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px 0 12px;
+  border: 1px solid #d1d9e0;
+  border-radius: 10px;
+  background: #fff;
+}
+.lookup-row:focus-within {
+  border-color: #0969da;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
+}
+.lookup-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #656d76;
+  flex-shrink: 0;
+}
+.lookup-input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: #1f2328;
+}
+.lookup-input:focus {
+  outline: none;
+}
+.control-icon-button.lookup-submit {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  color: #1f2328;
+}
+.control-icon-button.lookup-submit:hover {
+  border: 0;
+  background: #eaeef2;
+  color: #1f2328;
+}
+.field-help { font-size: 12px; color: #656d76; }
+.form-error { font-size: 12px; color: #82071e; }
+.feed-filter-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  gap: 10px;
+  flex: 1 1 380px;
+}
+.feed-select-wrap {
+  position: relative;
+  min-width: 0;
+}
+.feed-select {
+  width: 100%;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 34px 0 12px;
+  border: 1px solid #d1d9e0;
+  border-radius: 10px;
+  background: #fff;
+  color: #1f2328;
+  font: inherit;
+  line-height: 1.1;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.feed-select:focus {
+  outline: none;
+  border-color: #0969da;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
+}
+.select-chevron {
+  position: absolute;
+  right: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #656d76;
+  pointer-events: none;
+}
 .feed-reader-controls {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  margin-left: auto;
 }
 .tab {
-  min-height: 38px;
-  padding: 7px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 12px;
   border: 1px solid #d1d9e0;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 12px;
   color: #656d76;
   background: #fff;
   cursor: pointer;
   text-decoration: none;
+  line-height: 1;
 }
 .tab:hover { background: #f6f8fa; text-decoration: none; color: #1f2328; }
 .tab.active { background: #0969da; color: #fff; border-color: #0969da; }
-.toggle,
 .filter-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 38px;
-  padding: 7px 14px;
+  min-height: 32px;
+  padding: 5px 11px;
   border: 1px solid #d1d9e0;
-  border-radius: 999px;
+  border-radius: 8px;
   font-size: 12px;
   color: #656d76;
   background: #fff;
   text-decoration: none;
+  line-height: 1.25;
 }
-.toggle:hover,
 .filter-chip:hover { background: #f6f8fa; text-decoration: none; color: #1f2328; }
-.toggle.active,
 .filter-chip.active { background: #0969da; color: #fff; border-color: #0969da; }
-.toggle:disabled,
 .filter-chip:disabled,
 .paper-action:disabled {
   opacity: 0.55;
   cursor: default;
+}
+.control-icon-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid #d1d9e0;
+  border-radius: 10px;
+  background: #fff;
+  color: #57606a;
+  cursor: pointer;
+  text-decoration: none;
+  touch-action: manipulation;
+}
+.control-icon-button:hover {
+  background: #fff;
+  border-color: #b6c2cf;
+  color: #1f2328;
+  text-decoration: none;
+}
+.control-icon-button.active {
+  background: #ddf4ff;
+  border-color: #0969da;
+  color: #0550ae;
+}
+.control-icon-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.control-icon-button[data-count]::after {
+  content: attr(data-count);
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #1f2328;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+.control-icon-button.active[data-count]::after {
+  background: #0550ae;
+}
+.control-icon-button-primary {
+  background: #1f2328;
+  border-color: #1f2328;
+  color: #fff;
+}
+.control-icon-button-primary:hover {
+  background: #30363d;
+  border-color: #30363d;
+  color: #fff;
+}
+.icon {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .feed-results-bar {
   display: flex;
@@ -181,10 +349,11 @@ main {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid #d8dee4;
 }
 .feed-results { font-size: 12px; color: #656d76; }
 .feed-note { font-size: 12px; color: #656d76; }
-.feed-clear { font-size: 12px; color: #656d76; }
 
 /* Paper card */
 .paper-card {
@@ -203,9 +372,9 @@ main {
 .vote-btn {
   background: none;
   border: 1px solid #d1d9e0;
-  border-radius: 10px;
-  width: 40px;
-  height: 40px;
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
   cursor: pointer;
   font-size: 16px;
   color: #656d76;
@@ -216,6 +385,12 @@ main {
   touch-action: manipulation;
 }
 .vote-btn:hover { background: #f6f8fa; border-color: #0969da; color: #0969da; }
+.vote-btn.active,
+.btn.active {
+  background: #ddf4ff;
+  border-color: #0969da;
+  color: #0550ae;
+}
 .vote-count { min-width: 28px; text-align: center; font-size: 16px; font-weight: 700; color: #1f2328; }
 .paper-body { flex: 1; min-width: 0; }
 .paper-title {
@@ -243,7 +418,7 @@ main {
   background: #ddf4ff;
   color: #0550ae;
   padding: 3px 8px;
-  border-radius: 999px;
+  border-radius: 8px;
   font-size: 11px;
   font-weight: 600;
   line-height: 1.2;
@@ -303,7 +478,7 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   display: inline-flex;
   align-items: center;
   margin-top: 6px;
-  min-height: 36px;
+  min-height: 30px;
   font-size: 11px;
   color: #0969da;
   cursor: pointer;
@@ -317,7 +492,9 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  margin-top: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #eaeef2;
   font-size: 12px;
   color: #656d76;
 }
@@ -337,7 +514,7 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   display: inline-flex;
   align-items: center;
   padding: 3px 8px;
-  border-radius: 999px;
+  border-radius: 8px;
   font-size: 11px;
   font-weight: 600;
   line-height: 1.2;
@@ -350,14 +527,15 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
-  padding: 6px 10px;
+  min-height: 30px;
+  padding: 5px 10px;
   border: 1px solid #d1d9e0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: #fff;
   color: #57606a;
   cursor: pointer;
   text-decoration: none;
+  line-height: 1.25;
 }
 .paper-action:hover {
   background: #f6f8fa;
@@ -369,7 +547,7 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 11px;
   font-weight: 500;
 }
@@ -379,7 +557,6 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
 .ai-badge.error { background: #ffebe9; color: #82071e; }
 
 /* Paper detail page */
-.paper-detail { max-width: 820px; }
 .paper-detail-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; line-height: 1.3; }
 .paper-detail-meta { font-size: 13px; color: #656d76; margin-bottom: 16px; }
 .paper-links { display: flex; gap: 8px; margin-bottom: 24px; }
@@ -431,20 +608,203 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 42px;
-  padding: 8px 14px;
+  min-height: 36px;
+  padding: 6px 12px;
   border: 1px solid #d1d9e0;
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 13px;
   color: #1f2328;
   background: #f6f8fa;
   cursor: pointer;
   text-decoration: none;
   touch-action: manipulation;
+  line-height: 1.25;
 }
 .btn:hover { background: #eaeef2; text-decoration: none; }
 .btn-primary { background: #0969da; color: #fff; border-color: #0969da; }
 .btn-primary:hover { background: #0860ca; color: #fff; }
+.btn-quiet {
+  background: #fff;
+}
+
+.auth-shell {
+  max-width: 460px;
+  margin: 0 auto;
+}
+.auth-card,
+.account-panel {
+  border: 1px solid #d1d9e0;
+  border-radius: 16px;
+  background: #fff;
+  padding: 20px;
+}
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.auth-title {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+.auth-subtitle,
+.auth-note,
+.reader-sync-note,
+.account-note {
+  font-size: 13px;
+  line-height: 1.7;
+  color: #656d76;
+}
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f2328;
+}
+.text-input,
+.text-area {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #d1d9e0;
+  border-radius: 10px;
+  background: #fff;
+  color: #1f2328;
+}
+.text-input:focus,
+.text-area:focus {
+  outline: none;
+  border-color: #0969da;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
+}
+.field-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.notice {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #d1d9e0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.notice.error { background: #ffebe9; color: #82071e; border-color: #ffb4a8; }
+.notice.success { background: #dafbe1; color: #116329; border-color: #9ed8a5; }
+.notice.info { background: #ddf4ff; color: #0550ae; border-color: #96d0ff; }
+.notice.warning { background: #fff8c5; color: #7d4e00; border-color: #e8d27b; }
+.auth-footer {
+  font-size: 13px;
+  color: #656d76;
+}
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.account-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.account-panel.full {
+  grid-column: 1 / -1;
+}
+.account-panel-title {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.account-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.account-stat {
+  border: 1px solid #d1d9e0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f6f8fa;
+}
+.account-stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+.account-stat-label {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #656d76;
+}
+.account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.account-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid #d1d9e0;
+  border-radius: 12px;
+  background: #f6f8fa;
+}
+.invite-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.invite-status {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f2328;
+}
+.invite-detail {
+  font-size: 12px;
+  color: #656d76;
+}
+.invite-code-box {
+  padding: 14px;
+  border: 1px solid #d1d9e0;
+  border-radius: 12px;
+  background: #f6f8fa;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.invite-code {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #1f2328;
+  color: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.challenge-lockup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #d1d9e0;
+  border-radius: 12px;
+  background: #f6f8fa;
+}
 
 /* Sections */
 .section {
@@ -756,10 +1116,10 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   margin-top: 24px;
 }
 .page-btn {
-  min-height: 38px;
-  padding: 7px 12px;
+  min-height: 34px;
+  padding: 6px 11px;
   border: 1px solid #d1d9e0;
-  border-radius: 5px;
+  border-radius: 8px;
   font-size: 13px;
   color: #1f2328;
   background: #fff;
@@ -783,52 +1143,107 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
 
 /* Responsive */
 @media (max-width: 700px) {
+  .global-nav {
+    height: auto;
+    min-height: 48px;
+    padding: 10px 20px;
+    align-items: flex-start;
+    gap: 10px 12px;
+    flex-wrap: wrap;
+  }
+  .nav-side {
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 12px;
+    flex-wrap: wrap;
+  }
+  .nav-links {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .nav-auth {
+    margin-left: auto;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
   .feed-title { font-size: 22px; }
-  .lookup-form { width: 100%; }
-  .lookup-row { flex-direction: column; }
-  .feed-toolbar {
+  .feed-command-top,
+  .feed-command-bottom {
+    flex-direction: column;
     align-items: stretch;
   }
-  .feed-tabs,
-  .feed-controls {
+  .feed-command-bar {
+    padding: 12px;
+  }
+  .lookup-form,
+  .feed-filter-form {
+    flex: none;
     width: 100%;
+    max-width: none;
+    min-width: 0;
   }
   .feed-tabs {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .feed-controls {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .feed-tabs .tab,
-  .feed-controls .toggle {
     width: 100%;
   }
-  .filter-group {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scrollbar-width: none;
+  .feed-tabs .tab {
+    width: 100%;
+    justify-content: center;
   }
-  .filter-group::-webkit-scrollbar { display: none; }
+  .feed-filter-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .feed-results-bar {
     flex-direction: column;
     align-items: flex-start;
   }
+  .tab,
+  .filter-chip,
+  .btn,
+  .paper-action,
+  .page-btn,
+  .feed-select {
+    min-height: 40px;
+  }
+  .feed-select {
+    height: 40px;
+  }
+  .control-icon-button,
+  .vote-btn {
+    width: 40px;
+    height: 40px;
+  }
   .feed-reader-controls {
     width: 100%;
-  }
-  .feed-reader-controls .toggle {
-    flex: 1 0 auto;
+    margin-left: 0;
   }
   .summary-grid { grid-template-columns: 1fr; }
+  .account-grid,
+  .account-stat-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
-  .global-nav { padding: 0 16px; }
-  .nav-links { gap: 12px; }
+  .global-nav { padding: 10px 16px; }
+  .nav-side {
+    gap: 8px 10px;
+  }
+  .nav-auth {
+    width: auto;
+    justify-content: flex-end;
+  }
+  .nav-links { gap: 10px 12px; }
+  .nav-user {
+    max-width: min(55vw, 180px);
+  }
   main { padding: 16px; }
+  .feed-filter-form {
+    grid-template-columns: 1fr;
+  }
   .paper-card {
     padding: 16px;
     border-radius: 14px;
@@ -871,8 +1286,7 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
     padding: 14px;
   }
   .vote-spacer { display: none; }
-  .reader-bar,
-  .feed-reader-controls {
+  .reader-bar {
     flex-direction: column;
     align-items: stretch;
   }
@@ -910,11 +1324,11 @@ const CLIENT_JS = `
 const RETENTION_KEY = 'arxlens:reader-state:v1';
 
 function stablePaperId(value) {
-  return String(value || '').trim().replace(/(v\d+)$/i, '');
+  return String(value || '').trim().replace(/(v\\d+)$/i, '');
 }
 
 function extractVersion(value) {
-  const match = String(value || '').trim().match(/(v\d+)$/i);
+  const match = String(value || '').trim().match(/(v\\d+)$/i);
   return match ? match[1].toLowerCase() : '';
 }
 
@@ -923,8 +1337,9 @@ function migrateIdMap(map) {
 
   Object.entries(map || {}).forEach(([key, value]) => {
     const stableId = stablePaperId(key);
-    if (!stableId) return;
-    next[stableId] = value;
+    const numeric = Number(value || 0);
+    if (!stableId || !numeric) return;
+    next[stableId] = numeric;
   });
 
   return next;
@@ -941,7 +1356,7 @@ function migrateSavedMap(map) {
 
     const versionedId = value.versionedId || value.id || key;
     const href = typeof value.href === 'string' && value.href
-      ? value.href.replace(/\/paper\/[^/?#]+/, '/paper/' + encodeURIComponent(stableIdValue))
+      ? value.href.replace(/\\/paper\\/[^/?#]+/, '/paper/' + encodeURIComponent(stableIdValue))
       : '/paper/' + encodeURIComponent(stableIdValue);
 
     next[stableIdValue] = {
@@ -950,14 +1365,46 @@ function migrateSavedMap(map) {
       version: value.version || extractVersion(versionedId) || 'v1',
       versionedId: versionedId,
       href: href,
+      savedAt: Number(value.savedAt || 0) || Date.now(),
+      fetchedAt: Number(value.fetchedAt || 0) || 0,
+      categories: Array.isArray(value.categories) ? value.categories.filter(Boolean).slice(0, 8) : [],
     };
   });
 
   return next;
 }
 
+function loadViewer() {
+  const script = document.getElementById('arxlens-viewer');
+  if (!(script instanceof HTMLScriptElement)) {
+    return { isAuthenticated: false, username: '', canCreateInvites: false };
+  }
+
+  try {
+    const parsed = JSON.parse(script.textContent || 'null');
+    if (!parsed || typeof parsed !== 'object') {
+      return { isAuthenticated: false, username: '', canCreateInvites: false };
+    }
+
+    return {
+      isAuthenticated: !!parsed.isAuthenticated,
+      username: typeof parsed.username === 'string' ? parsed.username : '',
+      canCreateInvites: !!parsed.canCreateInvites,
+    };
+  } catch {
+    return { isAuthenticated: false, username: '', canCreateInvites: false };
+  }
+}
+
 function loadReaderState() {
-  const fallback = { saved: {}, seen: {}, read: {}, lastFeedVisit: 0 };
+  const fallback = {
+    saved: {},
+    seen: {},
+    read: {},
+    removedSaved: {},
+    removedRead: {},
+    lastFeedVisit: 0,
+  };
 
   try {
     const raw = window.localStorage.getItem(RETENTION_KEY);
@@ -970,6 +1417,8 @@ function loadReaderState() {
       saved: parsed.saved && typeof parsed.saved === 'object' ? migrateSavedMap(parsed.saved) : {},
       seen: parsed.seen && typeof parsed.seen === 'object' ? migrateIdMap(parsed.seen) : {},
       read: parsed.read && typeof parsed.read === 'object' ? migrateIdMap(parsed.read) : {},
+      removedSaved: parsed.removedSaved && typeof parsed.removedSaved === 'object' ? migrateIdMap(parsed.removedSaved) : {},
+      removedRead: parsed.removedRead && typeof parsed.removedRead === 'object' ? migrateIdMap(parsed.removedRead) : {},
       lastFeedVisit: typeof parsed.lastFeedVisit === 'number' ? parsed.lastFeedVisit : 0,
     };
   } catch {
@@ -1036,6 +1485,26 @@ function normalizeSavedMeta(meta, savedAt) {
   };
 }
 
+function serializeReaderState() {
+  return {
+    saved: readerState.saved,
+    seen: readerState.seen,
+    read: readerState.read,
+    removedSaved: readerState.removedSaved,
+    removedRead: readerState.removedRead,
+  };
+}
+
+function replaceReaderState(nextState) {
+  const preservedLastFeedVisit = readerState.lastFeedVisit || 0;
+  readerState.saved = migrateSavedMap(nextState && nextState.saved);
+  readerState.seen = migrateIdMap(nextState && nextState.seen);
+  readerState.read = migrateIdMap(nextState && nextState.read);
+  readerState.removedSaved = migrateIdMap(nextState && nextState.removedSaved);
+  readerState.removedRead = migrateIdMap(nextState && nextState.removedRead);
+  readerState.lastFeedVisit = preservedLastFeedVisit;
+}
+
 function savePaperMeta(meta, savedAt) {
   readerState.saved[meta.id] = normalizeSavedMeta(meta, savedAt);
 }
@@ -1052,6 +1521,7 @@ function isRead(id) {
   return !!readerState.read[id];
 }
 
+const viewer = loadViewer();
 const feedShell = document.querySelector('[data-feed-shell]');
 const detailRoot = document.querySelector('[data-paper-detail]');
 const feedCardsContainer = document.querySelector('[data-feed-cards]');
@@ -1064,7 +1534,10 @@ const feedNote = document.querySelector('[data-feed-note]');
 const feedPagination = document.querySelector('[data-feed-pagination]');
 const readerState = loadReaderState();
 const previousFeedVisit = feedShell ? (readerState.lastFeedVisit || 0) : 0;
+const pendingReaderOps = new Map();
 let activeClientFilter = null;
+let readerSyncReady = !viewer.isAuthenticated;
+let readerSyncTimer = 0;
 
 function isNewPaper(meta) {
   return !!previousFeedVisit && meta.fetchedAt > 0 && meta.fetchedAt * 1000 > previousFeedVisit;
@@ -1109,6 +1582,19 @@ function renderRetentionStatuses(meta) {
   return chips.join('');
 }
 
+function setVoteButtonsState(root, userVote) {
+  if (!(root instanceof Element)) return;
+  root.dataset.currentVote = userVote || '';
+
+  root.querySelectorAll('[data-vote-button]').forEach((button) => {
+    if (!(button instanceof HTMLElement)) return;
+    const dir = button.dataset.voteDir || '';
+    const active = !!userVote && dir === userVote;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+
 function updatePaperElement(element) {
   const meta = getPaperMeta(element);
   if (!meta) return;
@@ -1134,6 +1620,10 @@ function updatePaperElement(element) {
     target.setAttribute('aria-pressed', isRead(meta.id) ? 'true' : 'false');
   });
 
+  if (element instanceof HTMLElement) {
+    setVoteButtonsState(element, element.dataset.currentVote || null);
+  }
+
   if (isSaved(meta.id)) {
     const savedAt = readerState.saved[meta.id] && readerState.saved[meta.id].savedAt;
     savePaperMeta(meta, savedAt);
@@ -1144,22 +1634,141 @@ function updateAllPaperElements() {
   getPaperElements().forEach(updatePaperElement);
 }
 
+function mergePendingReaderOp(op) {
+  const pending = pendingReaderOps.get(op.paperId) || { paperId: op.paperId };
+
+  if (op.field === 'seen') {
+    pending.seen = { ts: Math.max((pending.seen && pending.seen.ts) || 0, op.ts) };
+  } else if (op.field === 'saved') {
+    pending.saved = { value: !!op.value, ts: op.ts };
+  } else if (op.field === 'read') {
+    pending.read = { value: !!op.value, ts: op.ts };
+  }
+
+  pendingReaderOps.set(op.paperId, pending);
+}
+
+function scheduleReaderSync(immediate) {
+  if (!viewer.isAuthenticated || !readerSyncReady) return;
+  if (readerSyncTimer) window.clearTimeout(readerSyncTimer);
+  readerSyncTimer = window.setTimeout(flushReaderSyncOps, immediate ? 0 : 500);
+}
+
+async function flushReaderSyncOps() {
+  if (!viewer.isAuthenticated || !readerSyncReady || pendingReaderOps.size === 0) return;
+  if (readerSyncTimer) {
+    window.clearTimeout(readerSyncTimer);
+    readerSyncTimer = 0;
+  }
+
+  const ops = [];
+  pendingReaderOps.forEach((entry) => {
+    if (entry.saved) {
+      ops.push({ paperId: entry.paperId, field: 'saved', value: entry.saved.value, ts: entry.saved.ts });
+    }
+    if (entry.read) {
+      ops.push({ paperId: entry.paperId, field: 'read', value: entry.read.value, ts: entry.read.ts });
+    }
+    if (entry.seen) {
+      ops.push({ paperId: entry.paperId, field: 'seen', ts: entry.seen.ts });
+    }
+  });
+
+  pendingReaderOps.clear();
+
+  try {
+    const response = await fetch('/account/reader-state/events', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ops: ops }),
+    });
+
+    if (response.status === 401) {
+      return;
+    }
+
+    if (!response.ok) {
+      throw new Error('reader sync failed');
+    }
+  } catch {
+    ops.forEach(mergePendingReaderOp);
+    scheduleReaderSync(false);
+  }
+}
+
+function queueReaderSync(op, immediate) {
+  if (!viewer.isAuthenticated) return;
+  mergePendingReaderOp(op);
+  scheduleReaderSync(immediate);
+}
+
+async function hydrateReaderStateFromServer() {
+  if (!viewer.isAuthenticated) return;
+
+  try {
+    const response = await fetch('/account/reader-state/import', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(serializeReaderState()),
+    });
+
+    if (response.status === 401) {
+      return;
+    }
+
+    if (!response.ok) {
+      return;
+    }
+
+    const data = await response.json().catch(() => null);
+    if (!data || typeof data !== 'object') return;
+
+    replaceReaderState(data);
+    persistReaderState();
+    renderSavedList();
+    updateAllPaperElements();
+    updateClientFilterButtons();
+    applyClientFilters();
+  } catch {
+    // Keep local state if sync fails.
+  } finally {
+    readerSyncReady = true;
+    if (pendingReaderOps.size > 0) {
+      scheduleReaderSync(true);
+    }
+  }
+}
+
 function markSeen(meta) {
   if (!meta || isSeen(meta.id)) return;
-  readerState.seen[meta.id] = Date.now();
+  const now = Date.now();
+  readerState.seen[meta.id] = now;
   persistReaderState();
   updateAllPaperElements();
+  queueReaderSync({ paperId: meta.id, field: 'seen', ts: now }, false);
 }
 
 function setReadState(meta, shouldRead) {
   if (!meta) return;
 
+  const now = Date.now();
+
   if (shouldRead) {
-    const now = Date.now();
     readerState.read[meta.id] = now;
-    readerState.seen[meta.id] = readerState.seen[meta.id] || now;
+    readerState.seen[meta.id] = Math.max(readerState.seen[meta.id] || 0, now);
+    delete readerState.removedRead[meta.id];
+    queueReaderSync({ paperId: meta.id, field: 'read', value: true, ts: now }, false);
+    queueReaderSync({ paperId: meta.id, field: 'seen', ts: readerState.seen[meta.id] }, false);
   } else {
     delete readerState.read[meta.id];
+    readerState.removedRead[meta.id] = now;
+    queueReaderSync({ paperId: meta.id, field: 'read', value: false, ts: now }, false);
   }
 
   persistReaderState();
@@ -1170,10 +1779,16 @@ function setReadState(meta, shouldRead) {
 function toggleSaved(meta) {
   if (!meta) return;
 
+  const now = Date.now();
+
   if (isSaved(meta.id)) {
     delete readerState.saved[meta.id];
+    readerState.removedSaved[meta.id] = now;
+    queueReaderSync({ paperId: meta.id, field: 'saved', value: false, ts: now }, false);
   } else {
-    savePaperMeta(meta, Date.now());
+    savePaperMeta(meta, now);
+    delete readerState.removedSaved[meta.id];
+    queueReaderSync({ paperId: meta.id, field: 'saved', value: true, ts: now }, false);
   }
 
   persistReaderState();
@@ -1276,6 +1891,17 @@ function updateFeedSummary(resultsText, noteText) {
   }
 }
 
+function setIconButtonCount(button, count) {
+  if (!(button instanceof HTMLElement)) return;
+
+  if (count > 0) {
+    button.dataset.count = count > 99 ? '99+' : String(count);
+    return;
+  }
+
+  delete button.dataset.count;
+}
+
 function updateClientFilterButtons() {
   const buttons = Array.from(document.querySelectorAll('[data-client-filter]'));
   const newCount = previousFeedVisit
@@ -1295,14 +1921,30 @@ function updateClientFilterButtons() {
     button.setAttribute('aria-pressed', active ? 'true' : 'false');
 
     if (filterName === 'saved') {
-      button.textContent = savedCount > 0 ? 'Saved (' + savedCount + ')' : 'Saved';
+      setIconButtonCount(button, savedCount);
       button.disabled = false;
+      const label = active
+        ? 'Exit saved view'
+        : savedCount > 0
+          ? 'Show saved papers (' + savedCount + ')'
+          : 'Show saved papers';
+      button.setAttribute('aria-label', label);
+      button.title = label;
       return;
     }
 
     if (filterName === 'new') {
-      button.textContent = newCount > 0 ? 'Only new (' + newCount + ')' : 'Only new';
+      setIconButtonCount(button, newCount);
       button.disabled = !previousFeedVisit;
+      const label = !previousFeedVisit
+        ? 'Only-new view becomes available after your next visit'
+        : active
+          ? 'Exit only-new view'
+          : newCount > 0
+            ? 'Show only new papers (' + newCount + ')'
+            : 'Show only new papers';
+      button.setAttribute('aria-label', label);
+      button.title = label;
     }
   });
 }
@@ -1321,14 +1963,14 @@ function applyClientFilters() {
     if (feedPagination instanceof HTMLElement) feedPagination.hidden = true;
 
     if (savedCount === 0) {
-      setClientEmpty('No saved papers yet', 'Save a paper to come back to it later on this browser.');
+      setClientEmpty('No saved papers yet', viewer.isAuthenticated ? 'Save a paper to keep it synced with your account.' : 'Save a paper to come back to it later on this browser.');
     } else {
       clearClientEmpty();
     }
 
     updateFeedSummary(
       formatCount(savedCount, 'saved paper', 'saved papers'),
-      'Saved for later lives in this browser for now.',
+      viewer.isAuthenticated ? 'Saved for later syncs to your account.' : 'Saved for later lives in this browser for now.',
     );
     return;
   }
@@ -1407,28 +2049,32 @@ if (detailRoot) {
   if (detailMeta) setReadState(detailMeta, true);
 }
 
-document.addEventListener("submit", async (event) => {
+if (viewer.isAuthenticated) {
+  hydrateReaderStateFromServer();
+}
+
+document.addEventListener('submit', async (event) => {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
 
-  if (form.matches("[data-challenge-form]")) {
+  if (form.matches('[data-challenge-form]')) {
     const button = form.querySelector("button[type='submit']");
     if (button instanceof HTMLButtonElement) {
       button.disabled = true;
-      button.textContent = "Submitting...";
+      button.textContent = 'Submitting...';
     }
     return;
   }
 
-  if (!form.matches("[data-vote-form]")) return;
+  if (!form.matches('[data-vote-form]')) return;
 
-  const voteRoot = form.closest("[data-vote-card]");
+  const voteRoot = form.closest('[data-vote-card]');
   if (!voteRoot) return;
 
   event.preventDefault();
 
-  const buttons = Array.from(voteRoot.querySelectorAll("[data-vote-button]"));
-  const liveRegion = voteRoot.querySelector("[data-vote-message]");
+  const buttons = Array.from(voteRoot.querySelectorAll('[data-vote-button]'));
+  const liveRegion = voteRoot.querySelector('[data-vote-message]');
 
   buttons.forEach((button) => {
     if (button instanceof HTMLButtonElement) button.disabled = true;
@@ -1436,39 +2082,53 @@ document.addEventListener("submit", async (event) => {
 
   try {
     const response = await fetch(form.action, {
-      method: form.method || "POST",
+      method: form.method || 'POST',
       body: new FormData(form),
       headers: {
-        "Accept": "application/json",
-        "X-Requested-With": "fetch",
+        'Accept': 'application/json',
+        'X-Requested-With': 'fetch',
       },
     });
 
     if (!response.ok) {
+      const data = await response.json().catch(() => null);
+
+      if (response.status === 401 && data && data.loginUrl) {
+        window.location.href = data.loginUrl;
+        return;
+      }
+
       if (response.status === 429) {
-        const data = await response.json().catch(() => null);
         if (liveRegion instanceof HTMLElement) {
           liveRegion.textContent = data && data.error ? data.error : 'You are voting too quickly. Try again soon.';
         }
         return;
       }
 
-      throw new Error("vote failed");
+      throw new Error('vote failed');
     }
 
     const data = await response.json();
-    const score = voteRoot.querySelector("[data-vote-score]");
-    const summary = voteRoot.querySelector("[data-vote-summary]");
+    const score = voteRoot.querySelector('[data-vote-score]');
+    const summary = voteRoot.querySelector('[data-vote-summary]');
 
     if (score instanceof HTMLElement) score.textContent = String(data.score);
     if (summary instanceof HTMLElement) {
-      summary.textContent = data.votesUp + " up · " + data.votesDown + " down";
+      summary.textContent = data.votesUp + ' up · ' + data.votesDown + ' down';
     }
+
+    setVoteButtonsState(voteRoot, data.userVote || null);
+
     if (liveRegion instanceof HTMLElement) {
-      liveRegion.textContent = data.dir === "up" ? "Upvoted." : "Downvoted.";
+      if (data.userVote === null) {
+        liveRegion.textContent = 'Vote removed.';
+      } else {
+        liveRegion.textContent = data.userVote === 'up' ? 'Upvoted.' : 'Downvoted.';
+      }
+
       window.setTimeout(() => {
-        if (liveRegion.textContent === "Upvoted." || liveRegion.textContent === "Downvoted.") {
-          liveRegion.textContent = "";
+        if (liveRegion.textContent === 'Upvoted.' || liveRegion.textContent === 'Downvoted.' || liveRegion.textContent === 'Vote removed.') {
+          liveRegion.textContent = '';
         }
       }, 1500);
     }
@@ -1481,7 +2141,29 @@ document.addEventListener("submit", async (event) => {
   }
 });
 
-document.addEventListener("click", (event) => {
+document.addEventListener('change', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLSelectElement)) return;
+  if (!target.matches('[data-feed-select]')) return;
+
+  const form = target.closest('[data-feed-filter-form]');
+  if (!(form instanceof HTMLFormElement)) return;
+
+  const formData = new FormData(form);
+  const params = new URLSearchParams();
+  const sort = String(formData.get('sort') || '');
+  const category = String(formData.get('category') || '');
+  const reviewed = String(formData.get('reviewed') || '');
+
+  if (sort) params.set('sort', sort);
+  if (category) params.set('category', category);
+  if (reviewed === '1') params.set('reviewed', '1');
+
+  const action = form.getAttribute('action') || window.location.pathname;
+  window.location.assign(params.toString() ? action + '?' + params.toString() : action);
+});
+
+document.addEventListener('click', (event) => {
   const target = event.target;
   if (!(target instanceof Element)) return;
 
@@ -1513,11 +2195,11 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  const trigger = target.closest("[data-challenge-prompt]");
+  const trigger = target.closest('[data-challenge-prompt]');
   if (!(trigger instanceof HTMLElement)) return;
 
-  const prompt = trigger.getAttribute("data-challenge-prompt") ?? "";
-  const targetId = trigger.getAttribute("data-challenge-target") ?? "challenge-input";
+  const prompt = trigger.getAttribute('data-challenge-prompt') || '';
+  const targetId = trigger.getAttribute('data-challenge-target') || 'challenge-input';
   const field = document.getElementById(targetId);
 
   if (field instanceof HTMLTextAreaElement) {
@@ -1525,21 +2207,53 @@ document.addEventListener("click", (event) => {
     field.focus();
     field.selectionStart = field.value.length;
     field.selectionEnd = field.value.length;
-    field.scrollIntoView({ behavior: "smooth", block: "center" });
+    field.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 });
 
-const pendingRefresh = document.querySelector("[data-refresh-while-pending]");
+const pendingRefresh = document.querySelector('[data-refresh-while-pending]');
 if (pendingRefresh) {
   window.setTimeout(() => window.location.reload(), 4000);
-} else if (window.location.search.includes("challenge=queued")) {
+} else if (window.location.search.includes('challenge=queued')) {
   const nextUrl = new URL(window.location.href);
-  nextUrl.searchParams.delete("challenge");
-  window.history.replaceState({}, "", nextUrl.toString());
+  nextUrl.searchParams.delete('challenge');
+  window.history.replaceState({}, '', nextUrl.toString());
 }
 `;
 
-function layout(title: string, content: string, activeNav: "feed" | "about" = "feed"): string {
+function viewerScriptJson(viewer: Viewer | null): string {
+  return JSON.stringify({
+    isAuthenticated: !!viewer,
+    username: viewer?.username ?? "",
+    canCreateInvites: !!viewer?.canCreateInvites,
+  })
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
+}
+
+function renderAuthNav(activeNav: "feed" | "about" | "account", viewer: Viewer | null): string {
+  if (!viewer) {
+    return `<div class="nav-auth">
+      <a href="/login" class="paper-action">Log in</a>
+      <a href="/signup" class="paper-action">Sign up</a>
+    </div>`;
+  }
+
+  return `<div class="nav-auth">
+    <a href="/account" class="nav-user${activeNav === "account" ? " active" : ""}">@${htmlEscape(viewer.username)}</a>
+    <form method="POST" action="/logout">
+      <button type="submit" class="nav-logout">Log out</button>
+    </form>
+  </div>`;
+}
+
+function layout(
+  title: string,
+  content: string,
+  activeNav: "feed" | "about" | "account" = "feed",
+  viewer: Viewer | null = null,
+): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1553,15 +2267,19 @@ function layout(title: string, content: string, activeNav: "feed" | "about" = "f
 <header>
   <div class="global-nav">
     <a href="/" class="logo">arx<span>lens</span></a>
-    <nav class="nav-links">
-      <a href="/"${activeNav === "feed" ? ' class="active"' : ""}>Feed</a>
-      <a href="/about"${activeNav === "about" ? ' class="active"' : ""}>About</a>
-    </nav>
+    <div class="nav-side">
+      <nav class="nav-links">
+        <a href="/"${activeNav === "feed" ? ' class="active"' : ""}>Feed</a>
+        <a href="/about"${activeNav === "about" ? ' class="active"' : ""}>About</a>
+      </nav>
+      ${renderAuthNav(activeNav, viewer)}
+    </div>
   </div>
 </header>
 <main>
 ${content}
 </main>
+<script id="arxlens-viewer" type="application/json">${viewerScriptJson(viewer)}</script>
 <script>${CLIENT_JS}</script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js"
@@ -1585,6 +2303,37 @@ export interface FeedOptions {
   reviewedOnly: boolean;
   lookupValue: string;
   lookupError: string;
+  currentPath: string;
+  viewer: Viewer | null;
+  userVotes: Record<string, "up" | "down">;
+}
+
+function iconSvg(paths: string): string {
+  return `<svg class="icon" viewBox="0 0 16 16" aria-hidden="true">${paths}</svg>`;
+}
+
+function searchIcon(): string {
+  return iconSvg('<circle cx="7" cy="7" r="4.25"></circle><path d="M10.5 10.5 14 14"></path>');
+}
+
+function arrowRightIcon(): string {
+  return iconSvg('<path d="M3 8h10"></path><path d="m9.5 4.5 3.5 3.5-3.5 3.5"></path>');
+}
+
+function bookmarkIcon(): string {
+  return iconSvg('<path d="M4 2.75h8a.5.5 0 0 1 .5.5v10l-4.5-3-4.5 3v-10a.5.5 0 0 1 .5-.5Z"></path>');
+}
+
+function sparkIcon(): string {
+  return iconSvg('<path d="M8 2.5 9.4 6.1 13 7.5 9.4 8.9 8 12.5 6.6 8.9 3 7.5 6.6 6.1 8 2.5Z"></path>');
+}
+
+function rotateIcon(): string {
+  return iconSvg('<path d="M2.5 8A5.5 5.5 0 1 0 4 4"></path><path d="M2.5 2.75v3h3"></path>');
+}
+
+function chevronDownIcon(): string {
+  return iconSvg('<path d="m4.5 6.5 3.5 3 3.5-3"></path>');
 }
 
 export function feedPage(opts: FeedOptions): string {
@@ -1599,6 +2348,9 @@ export function feedPage(opts: FeedOptions): string {
     reviewedOnly,
     lookupValue,
     lookupError,
+    currentPath,
+    viewer,
+    userVotes,
   } = opts;
   const totalPages = Math.ceil(total / pageSize);
   const hasFilters = reviewedOnly || !!selectedCategory;
@@ -1645,51 +2397,67 @@ export function feedPage(opts: FeedOptions): string {
 
   const header = `
 <div class="feed-header">
-  <div class="feed-lede">
-    <div>
-      <div class="feed-title">Your paper timeline</div>
-      <div class="feed-subtitle">Scroll AI takes the way you would scroll a great paper aggregator: quick signal first, deeper critique when something earns your attention, and challenges when a claim feels off.</div>
-    </div>
-    <form method="GET" action="/" class="lookup-form">
-      <label class="lookup-label" for="paper-lookup">Open any arXiv paper</label>
-      <div class="lookup-row">
-        <input
-          id="paper-lookup"
-          class="lookup-input"
-          type="text"
-          name="paper"
-          value="${htmlEscape(lookupValue)}"
-          placeholder="Paste arXiv URL or 2401.12345"
-        >
-        <button type="submit" class="btn btn-primary">Open</button>
+  <div class="feed-copy">
+    <div class="feed-title">Your paper timeline</div>
+    <div class="feed-subtitle">Scroll AI takes the way you would scroll a great paper aggregator: quick signal first, deeper critique when something earns your attention, and challenges when a claim feels off.</div>
+  </div>
+  <div class="feed-command-bar">
+    <div class="feed-command-top">
+      <div class="feed-tabs">
+        ${tabHtml("Trending", "hot")}
+        ${tabHtml("Newest", "new")}
+        ${tabHtml("Top", "top")}
       </div>
-      <div class="field-help">Paste an arXiv URL or paper ID to ingest it on demand.</div>
-      ${lookupError ? `<div class="form-error">${htmlEscape(lookupError)}</div>` : ""}
-    </form>
-  </div>
-  <div class="feed-toolbar">
-    <div class="feed-tabs">
-      ${tabHtml("Trending", "hot")}
-      ${tabHtml("Newest", "new")}
-      ${tabHtml("Top", "top")}
+      <form method="GET" action="/" class="lookup-form">
+        <label class="sr-only" for="paper-lookup">Open arXiv paper</label>
+        <div class="lookup-row">
+          <span class="lookup-icon">${searchIcon()}</span>
+          <input
+            id="paper-lookup"
+            class="lookup-input"
+            type="text"
+            name="paper"
+            value="${htmlEscape(lookupValue)}"
+            placeholder="Open paper or paste arXiv URL"
+          >
+          <button type="submit" class="control-icon-button lookup-submit" aria-label="Open paper" title="Open paper">${arrowRightIcon()}</button>
+        </div>
+        ${lookupError ? `<div class="form-error">${htmlEscape(lookupError)}</div>` : ""}
+      </form>
     </div>
-    <div class="feed-controls">
-      <a href="${feedHref({ reviewedOnly: false })}" class="toggle${!reviewedOnly ? " active" : ""}">All papers</a>
-      <a href="${feedHref({ reviewedOnly: true })}" class="toggle${reviewedOnly ? " active" : ""}">Reviewed only</a>
+
+    <div class="feed-command-bottom">
+      <form method="GET" action="/" class="feed-filter-form" data-feed-filter-form>
+        <input type="hidden" name="sort" value="${htmlEscape(sort)}">
+        <label class="sr-only" for="feed-category">Category</label>
+        <div class="feed-select-wrap">
+          <select id="feed-category" class="feed-select" name="category" data-feed-select aria-label="Category">
+            <option value="">All categories</option>
+            ${categories.map((category) => `<option value="${htmlEscape(category)}"${selectedCategory === category ? " selected" : ""}>${htmlEscape(category)}</option>`).join("")}
+          </select>
+          <span class="select-chevron">${chevronDownIcon()}</span>
+        </div>
+        <label class="sr-only" for="feed-reviewed">Review status</label>
+        <div class="feed-select-wrap">
+          <select id="feed-reviewed" class="feed-select" name="reviewed" data-feed-select aria-label="Review status">
+            <option value="">All papers</option>
+            <option value="1"${reviewedOnly ? " selected" : ""}>Reviewed only</option>
+          </select>
+          <span class="select-chevron">${chevronDownIcon()}</span>
+        </div>
+      </form>
+
+      <div class="feed-reader-controls" data-reader-controls>
+        <button type="button" class="control-icon-button" data-client-filter="saved" aria-label="Show saved papers" title="Show saved papers">${bookmarkIcon()}</button>
+        <button type="button" class="control-icon-button" data-client-filter="new" aria-label="Show only new papers" title="Show only new papers">${sparkIcon()}</button>
+        ${hasFilters ? `<a href="${feedHref({ selectedCategory: null, reviewedOnly: false })}" class="control-icon-button" aria-label="Reset filters" title="Reset filters">${rotateIcon()}</a>` : ""}
+      </div>
     </div>
-  </div>
-  <div class="filter-group">
-    <a href="${feedHref({ selectedCategory: null })}" class="filter-chip${!selectedCategory ? " active" : ""}">All categories</a>
-    ${categories.map((category) => `<a href="${feedHref({ selectedCategory: category })}" class="filter-chip${selectedCategory === category ? " active" : ""}">${htmlEscape(category)}</a>`).join("")}
-  </div>
-  <div class="feed-reader-controls" data-reader-controls>
-    <button type="button" class="toggle" data-client-filter="saved">Saved</button>
-    <button type="button" class="toggle" data-client-filter="new">Only new</button>
-  </div>
-  <div class="feed-results-bar">
-    <div class="feed-results" data-feed-results data-default-text="${htmlEscape(resultsLabel)}">${htmlEscape(resultsLabel)}</div>
-    <div class="feed-note" data-feed-note data-default-text="${htmlEscape(sortNote)}">${htmlEscape(sortNote)}</div>
-    ${hasFilters ? `<a href="${feedHref({ selectedCategory: null, reviewedOnly: false })}" class="feed-clear">Clear filters</a>` : ""}
+
+    <div class="feed-results-bar">
+      <div class="feed-results" data-feed-results data-default-text="${htmlEscape(resultsLabel)}">${htmlEscape(resultsLabel)}</div>
+      <div class="feed-note" data-feed-note data-default-text="${htmlEscape(sortNote)}">${htmlEscape(sortNote)}</div>
+    </div>
   </div>
 </div>`;
 
@@ -1700,7 +2468,13 @@ export function feedPage(opts: FeedOptions): string {
           <p>${hasFilters ? "Try another category or include papers still being reviewed." : "Papers are fetched every day from arXiv. Check back soon."}</p>
           ${hasFilters ? `<p style="margin-top:12px"><a href="${feedHref({ selectedCategory: null, reviewedOnly: false })}">Clear filters</a></p>` : ""}
         </div>`
-      : papers.map((p) => paperCard(p, (category) => feedHref({ selectedCategory: category }))).join("\n");
+      : papers.map((p) => paperCard(
+          p,
+          (category) => feedHref({ selectedCategory: category }),
+          currentPath,
+          viewer,
+          userVotes[p.id] ?? null,
+        )).join("\n");
 
   const pagination =
     totalPages <= 1
@@ -1732,10 +2506,17 @@ export function feedPage(opts: FeedOptions): string {
       ${pagination}
     </div>`,
     "feed",
+    viewer,
   );
 }
 
-function paperCard(p: PaperRow, categoryHref: (category: string) => string): string {
+function paperCard(
+  p: PaperRow,
+  categoryHref: (category: string) => string,
+  currentPath: string,
+  viewer: Viewer | null,
+  userVote: "up" | "down" | null,
+): string {
   const authors = JSON.parse(p.authors) as string[];
   const categories = JSON.parse(p.categories) as string[];
   const authorStr =
@@ -1746,6 +2527,7 @@ function paperCard(p: PaperRow, categoryHref: (category: string) => string): str
   const previewText = compactPlainText(safeIntro || p.abstract, 420);
   const detailHref = `/paper/${encodeURIComponent(p.id)}`;
   const versionChip = `<span class="version-chip">${htmlEscape(p.version)}</span>`;
+  const voteTitle = viewer ? "Vote" : "Sign in to vote";
 
   const catBadges = categories
     .slice(0, 3)
@@ -1772,6 +2554,7 @@ function paperCard(p: PaperRow, categoryHref: (category: string) => string): str
   data-paper-preview="${htmlEscape(previewText)}"
   data-paper-review-status="${htmlEscape(p.review_status)}"
   data-paper-fetched-at="${p.fetched_at}"
+  data-current-vote="${userVote ?? ""}"
   data-vote-card
 >
   <span class="sr-only" aria-live="polite" data-vote-message></span>
@@ -1779,12 +2562,14 @@ function paperCard(p: PaperRow, categoryHref: (category: string) => string): str
     <div class="vote-col">
       <form method="POST" action="/paper/${htmlEscape(p.id)}/vote" style="display:contents" data-vote-form>
         <input type="hidden" name="dir" value="up">
-        <button type="submit" class="vote-btn" title="Upvote" data-vote-button>&#9650;</button>
+        <input type="hidden" name="next" value="${htmlEscape(currentPath)}">
+        <button type="submit" class="vote-btn${userVote === "up" ? " active" : ""}" title="${voteTitle}" data-vote-button data-vote-dir="up" aria-pressed="${userVote === "up" ? "true" : "false"}">&#9650;</button>
       </form>
       <span class="vote-count" data-vote-score>${score}</span>
       <form method="POST" action="/paper/${htmlEscape(p.id)}/vote" style="display:contents" data-vote-form>
         <input type="hidden" name="dir" value="down">
-        <button type="submit" class="vote-btn" title="Downvote" data-vote-button>&#9660;</button>
+        <input type="hidden" name="next" value="${htmlEscape(currentPath)}">
+        <button type="submit" class="vote-btn${userVote === "down" ? " active" : ""}" title="${voteTitle}" data-vote-button data-vote-dir="down" aria-pressed="${userVote === "down" ? "true" : "false"}">&#9660;</button>
       </form>
     </div>
     <div class="paper-body">
@@ -1831,10 +2616,24 @@ export interface PaperDetailOptions {
   reviewStatus: string;
   challenges: Challenge[];
   challengeQueued: boolean;
+  currentPath: string;
+  viewer: Viewer | null;
+  userVote: "up" | "down" | null;
 }
 
 export function paperDetailPage(opts: PaperDetailOptions): string {
-  const { paper, intro, review, reviewData, reviewStatus, challenges, challengeQueued } = opts;
+  const {
+    paper,
+    intro,
+    review,
+    reviewData,
+    reviewStatus,
+    challenges,
+    challengeQueued,
+    currentPath,
+    viewer,
+    userVote,
+  } = opts;
   const authors = JSON.parse(paper.authors) as string[];
   const categories = JSON.parse(paper.categories) as string[];
   const score = paper.votes_up - paper.votes_down;
@@ -1859,7 +2658,10 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
 
   const readerBar = `
 <div class="reader-bar">
-  <div class="reader-statuses" data-retention-statuses></div>
+  <div>
+    <div class="reader-statuses" data-retention-statuses></div>
+    <div class="reader-sync-note" style="margin-top:8px">${viewer ? `Reader state syncs to <strong>@${htmlEscape(viewer.username)}</strong>.` : `Reader state stays local until you sign in.`}</div>
+  </div>
   <div class="reader-actions">
     <button type="button" class="btn" data-save-toggle>Save for later</button>
     <button type="button" class="btn" data-read-toggle>Mark unread</button>
@@ -1868,11 +2670,12 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
 
   // Vote bar
   const voteBar = `
-<div class="vote-bar" data-vote-card>
+<div class="vote-bar" data-vote-card data-current-vote="${userVote ?? ""}">
   <span class="sr-only" aria-live="polite" data-vote-message></span>
   <form method="POST" action="/paper/${htmlEscape(paper.id)}/vote" style="display:contents" data-vote-form>
     <input type="hidden" name="dir" value="up">
-    <button type="submit" class="btn" data-vote-button>&#9650; Upvote</button>
+    <input type="hidden" name="next" value="${htmlEscape(currentPath)}">
+    <button type="submit" class="btn${userVote === "up" ? " active" : ""}" data-vote-button data-vote-dir="up" aria-pressed="${userVote === "up" ? "true" : "false"}">&#9650; ${viewer ? "Upvote" : "Sign in to vote"}</button>
   </form>
   <div>
     <div class="vote-bar-count" data-vote-score>${score}</div>
@@ -1881,7 +2684,8 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
   <div class="vote-spacer"></div>
   <form method="POST" action="/paper/${htmlEscape(paper.id)}/vote" style="display:contents" data-vote-form>
     <input type="hidden" name="dir" value="down">
-    <button type="submit" class="btn" data-vote-button>&#9660; Downvote</button>
+    <input type="hidden" name="next" value="${htmlEscape(currentPath)}">
+    <button type="submit" class="btn${userVote === "down" ? " active" : ""}" data-vote-button data-vote-dir="down" aria-pressed="${userVote === "down" ? "true" : "false"}">&#9660; ${viewer ? "Downvote" : "Sign in to vote"}</button>
   </form>
 </div>`;
 
@@ -1898,7 +2702,7 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
   const reviewSection = reviewSectionHtml(reviewStatus, safeIntro, safeReview, reviewData);
 
   // Challenge section
-  const challengeSection = challengeSectionHtml(paper.id, challenges, challengeQueued);
+  const challengeSection = challengeSectionHtml(paper.id, currentPath, challenges, challengeQueued, viewer);
 
   const content = `
 <div
@@ -1917,6 +2721,7 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
   data-paper-preview="${htmlEscape(previewText)}"
   data-paper-review-status="${htmlEscape(reviewStatus)}"
   data-paper-fetched-at="${paper.fetched_at}"
+  data-current-vote="${userVote ?? ""}"
 >
   <nav style="font-size:13px;color:#656d76;margin-bottom:16px">
     <a href="/">Feed</a> / <span>${htmlEscape(paper.id)}</span> ${versionChip}
@@ -1945,7 +2750,7 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
   ${challengeSection}
 </div>`;
 
-  return layout(paper.title, content, "feed");
+  return layout(paper.title, content, "feed", viewer);
 }
 
 function detailSummarySection(
@@ -2087,8 +2892,10 @@ function reviewSectionHtml(
 
 function challengeSectionHtml(
   paperId: string,
+  currentPath: string,
   challenges: Challenge[],
   challengeQueued: boolean,
+  viewer: Viewer | null,
 ): string {
   const pendingCount = challenges.filter(
     (challenge) => challenge.status === "pending" || challenge.status === "running",
@@ -2114,26 +2921,37 @@ function challengeSectionHtml(
            ${challenges.map(challengeItemHtml).join("\n")}
          </div>`;
 
+  const challengeComposer = viewer
+    ? `<div class="challenge-suggestions">
+         ${challengePromptButton("Ask for evidence", "Please gather the strongest evidence for the main claim in this paper. Quote the paper or cited sources directly.")}
+         ${challengePromptButton("Re-examine the critique", "Please revisit the AI's main critique of this paper. Is it fair and well-supported? Quote the paper or cited sources directly.")}
+         ${challengePromptButton("Check comparison fairness", "Please check whether the paper's comparison to related work is fair. Quote the paper or cited sources directly.")}
+       </div>
+       <form method="POST" action="/paper/${htmlEscape(paperId)}/challenge" class="challenge-form" style="margin-bottom:16px" data-challenge-form>
+         <input type="hidden" name="next" value="${htmlEscape(currentPath)}">
+         <textarea
+           id="challenge-input"
+           name="prompt"
+           placeholder="e.g. &quot;I disagree with the claim about scalability on page 5. The paper ignores X &mdash; please re-examine this.&quot;"
+           required
+         ></textarea>
+         <button type="submit" class="btn btn-primary">Submit challenge</button>
+       </form>`
+    : `<div class="challenge-lockup">
+         <div class="account-note">Challenges are public to read, but only signed-in members can post them. Your challenge text is stored with your account for moderation, but usernames are not shown in the public thread.</div>
+         <div class="field-row">
+           <a href="/login?next=${encodeURIComponent(currentPath)}" class="btn btn-primary">Log in to challenge</a>
+           <a href="/signup?next=${encodeURIComponent(currentPath)}" class="btn btn-quiet">Create account</a>
+         </div>
+       </div>`;
+
   return `
 <div class="section" id="challenges">
   <div class="section-header">Challenge the Review</div>
   <div class="section-body">
     ${challengeBanner}
     <p class="challenge-help">${htmlEscape(helpText)}</p>
-    <div class="challenge-suggestions">
-      ${challengePromptButton("Ask for evidence", "Please gather the strongest evidence for the main claim in this paper. Quote the paper or cited sources directly.")}
-      ${challengePromptButton("Re-examine the critique", "Please revisit the AI's main critique of this paper. Is it fair and well-supported? Quote the paper or cited sources directly.")}
-      ${challengePromptButton("Check comparison fairness", "Please check whether the paper's comparison to related work is fair. Quote the paper or cited sources directly.")}
-    </div>
-    <form method="POST" action="/paper/${htmlEscape(paperId)}/challenge" class="challenge-form" style="margin-bottom:16px" data-challenge-form>
-      <textarea
-        id="challenge-input"
-        name="prompt"
-        placeholder="e.g. &quot;I disagree with the claim about scalability on page 5. The paper ignores X &mdash; please re-examine this.&quot;"
-        required
-      ></textarea>
-      <button type="submit" class="btn btn-primary">Submit challenge</button>
-    </form>
+    ${challengeComposer}
     ${threadHtml}
   </div>
 </div>`;
@@ -2213,6 +3031,208 @@ function challengeStanceLabel(stance: NonNullable<Challenge["response_data"]>["s
 }
 
 // ---------------------------------------------------------------------------
+// Auth pages
+// ---------------------------------------------------------------------------
+
+function noticeHtml(kind: "error" | "success" | "info" | "warning", message: string): string {
+  return `<div class="notice ${kind}">${htmlEscape(message)}</div>`;
+}
+
+export interface LoginPageOptions {
+  nextPath: string;
+  username: string;
+  error?: string;
+}
+
+export function loginPage(opts: LoginPageOptions): string {
+  const { nextPath, username, error } = opts;
+  const signupHref = `/signup?next=${encodeURIComponent(nextPath)}`;
+  const content = `
+<div class="auth-shell">
+  <section class="auth-card">
+    <div>
+      <div class="auth-title">Log in</div>
+      <div class="auth-subtitle">Use your username and password. No email, phone, or public profile required.</div>
+    </div>
+    ${error ? noticeHtml("error", error) : ""}
+    <form method="POST" action="/login" class="auth-form">
+      <input type="hidden" name="next" value="${htmlEscape(nextPath)}">
+      <label class="field-stack">
+        <span class="field-label">Username</span>
+        <input class="text-input" type="text" name="username" autocomplete="username" value="${htmlEscape(username)}" required>
+      </label>
+      <label class="field-stack">
+        <span class="field-label">Password</span>
+        <input class="text-input" type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="btn btn-primary">Log in</button>
+    </form>
+    <div class="auth-note">There is no email reset flow yet, so keep your username and password somewhere safe.</div>
+    <div class="auth-footer">Need an account? <a href="${signupHref}">Create one with an invite</a>.</div>
+  </section>
+</div>`;
+
+  return layout("Log in", content, "feed", null);
+}
+
+export interface SignupPageOptions {
+  nextPath: string;
+  username: string;
+  inviteCode: string;
+  bootstrapOpen: boolean;
+  inviteStatus: InviteCodeStatus | null;
+  error?: string;
+}
+
+export function signupPage(opts: SignupPageOptions): string {
+  const { nextPath, username, inviteCode, bootstrapOpen, inviteStatus, error } = opts;
+  const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
+  const inviteNotice = inviteStatus
+    ? noticeHtml(
+        inviteStatus.kind === "ready"
+          ? "success"
+          : inviteStatus.kind === "invalid"
+            ? "error"
+            : "warning",
+        inviteStatus.message,
+      )
+    : "";
+
+  const content = `
+<div class="auth-shell">
+  <section class="auth-card">
+    <div>
+      <div class="auth-title">Create account</div>
+      <div class="auth-subtitle">Choose a pseudonymous username and password. Public reading stays open; the account is for sync and participation.</div>
+    </div>
+    ${bootstrapOpen
+      ? noticeHtml("info", "This is the first account, so no invite is required. It will get invite privileges.")
+      : inviteNotice}
+    ${error ? noticeHtml("error", error) : ""}
+    <form method="POST" action="/signup" class="auth-form">
+      <input type="hidden" name="next" value="${htmlEscape(nextPath)}">
+      <label class="field-stack">
+        <span class="field-label">Username</span>
+        <input class="text-input" type="text" name="username" value="${htmlEscape(username)}" autocomplete="username" required>
+      </label>
+      <label class="field-stack">
+        <span class="field-label">Password</span>
+        <input class="text-input" type="password" name="password" autocomplete="new-password" required>
+      </label>
+      <label class="field-stack">
+        <span class="field-label">Confirm password</span>
+        <input class="text-input" type="password" name="password_confirm" autocomplete="new-password" required>
+      </label>
+      ${bootstrapOpen
+        ? ""
+        : `<label class="field-stack">
+             <span class="field-label">Invite code</span>
+             <input class="text-input" type="text" name="invite" value="${htmlEscape(inviteCode)}" required>
+           </label>`}
+      <button type="submit" class="btn btn-primary">Create account</button>
+    </form>
+    <div class="auth-note">Use a pseudonym. Don&rsquo;t use a real name or a handle you already use somewhere else.</div>
+    <div class="auth-footer">Already have an account? <a href="${loginHref}">Log in</a>.</div>
+  </section>
+</div>`;
+
+  return layout("Create account", content, "feed", null);
+}
+
+export interface AccountPageOptions {
+  viewer: Viewer;
+  savedCount: number;
+  seenCount: number;
+  readCount: number;
+  invites: InviteSummary[];
+  createdInviteCode?: string;
+  createdInviteExpiresAt?: number;
+  notice?: {
+    kind: "error" | "success" | "info" | "warning";
+    message: string;
+  };
+}
+
+export function accountPage(opts: AccountPageOptions): string {
+  const {
+    viewer,
+    savedCount,
+    seenCount,
+    readCount,
+    invites,
+    createdInviteCode,
+    createdInviteExpiresAt,
+    notice,
+  } = opts;
+
+  const inviteList = invites.length === 0
+    ? `<div class="account-note">No invites created yet.</div>`
+    : `<div class="account-list">${invites.map((invite) => `<div class="account-list-row">
+         <div class="invite-meta">
+           <div class="invite-status">${htmlEscape(invite.status === "available" ? "Available" : invite.status === "claimed" ? "Claimed" : "Expired")}</div>
+           <div class="invite-detail">Created ${htmlEscape(formatDateTime(invite.createdAt))} · expires ${htmlEscape(formatDateTime(invite.expiresAt))}${invite.usedAt ? ` · used ${htmlEscape(formatDateTime(invite.usedAt))}` : ""}</div>
+         </div>
+       </div>`).join("")}</div>`;
+
+  const createdInviteBox = createdInviteCode
+    ? `<div class="invite-code-box">
+         <div><strong>New invite code</strong></div>
+         <div class="invite-code">${htmlEscape(createdInviteCode)}</div>
+         <div class="account-note" style="margin-top:10px">Share this code directly, or send this link: <a href="/signup?invite=${encodeURIComponent(createdInviteCode)}">/signup?invite=${htmlEscape(createdInviteCode)}</a>${createdInviteExpiresAt ? ` · expires ${htmlEscape(formatDateTime(createdInviteExpiresAt))}` : ""}</div>
+       </div>`
+    : "";
+
+  const content = `
+<div class="paper-detail">
+  <h1 class="paper-detail-title">@${htmlEscape(viewer.username)}</h1>
+  <div class="paper-detail-meta">Private account for sync and participation. No email, phone, bio, or public profile required.</div>
+
+  ${notice ? noticeHtml(notice.kind, notice.message) : ""}
+
+  <div class="account-grid">
+    <section class="account-panel">
+      <div class="account-panel-title">Reader sync</div>
+      <div class="account-note">Saved, seen, and read state from this browser merges into your account automatically after sign-in.</div>
+      <div class="account-stat-grid">
+        <div class="account-stat">
+          <div class="account-stat-value">${savedCount}</div>
+          <div class="account-stat-label">Saved</div>
+        </div>
+        <div class="account-stat">
+          <div class="account-stat-value">${seenCount}</div>
+          <div class="account-stat-label">Seen</div>
+        </div>
+        <div class="account-stat">
+          <div class="account-stat-value">${readCount}</div>
+          <div class="account-stat-label">Read</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="account-panel">
+      <div class="account-panel-title">Privacy model</div>
+      <div class="account-note">Your username is the only user identifier this app asks for. Votes and challenges are tied to your account for moderation, but usernames are not shown publicly on paper pages.</div>
+      <div class="account-note">There is no email reset flow yet, so keep your username and password somewhere safe.</div>
+    </section>
+
+    <section class="account-panel full">
+      <div class="account-panel-title">Invites</div>
+      <div class="account-note">Single-use invite codes expire after two weeks.</div>
+      ${viewer.canCreateInvites
+        ? `<form method="POST" action="/account/invites" class="field-row">
+             <button type="submit" class="btn btn-primary">Create invite</button>
+           </form>
+           ${createdInviteBox}`
+        : `<div class="account-note">This account cannot create invites yet.</div>`}
+      ${inviteList}
+    </section>
+  </div>
+</div>`;
+
+  return layout("Account", content, "account", viewer);
+}
+
+// ---------------------------------------------------------------------------
 // About page
 // ---------------------------------------------------------------------------
 
@@ -2220,10 +3240,11 @@ export interface AboutOptions {
   categories: string[];
   paperCount: number;
   reviewedCount: number;
+  viewer: Viewer | null;
 }
 
 export function aboutPage(opts: AboutOptions): string {
-  const { categories, paperCount, reviewedCount } = opts;
+  const { categories, paperCount, reviewedCount, viewer } = opts;
   const catList = categories.map(c => `<span class="category">${htmlEscape(c)}</span>`).join(" ");
 
   const content = `
@@ -2255,6 +3276,16 @@ export function aboutPage(opts: AboutOptions): string {
       <p><strong>The review is an argument.</strong> It can surface useful criticism, but it can also be wrong, unfair, or incomplete.</p>
       <p><strong>The challenge flow is a second pass.</strong> It is meant to pressure-test claims against the paper and cited sources, not certify correctness.</p>
       <p>For consequential decisions, read the paper yourself and treat arxlens as a reading aid, not a source of truth.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">Accounts and privacy</div>
+    <div class="section-body">
+      <p><strong>Reading stays public.</strong> You can browse the feed and paper pages without an account.</p>
+      <p><strong>Accounts are lightweight.</strong> Sign-in uses a username and password only. No email, phone number, or public profile is required.</p>
+      <p><strong>Auth is for sync and participation.</strong> Saved/read state can sync across browsers, and votes plus challenges are gated behind sign-in.</p>
+      <p>${viewer ? `You are currently signed in as <strong>@${htmlEscape(viewer.username)}</strong>.` : `If you want synced state or member actions, create an account with an invite.`}</p>
     </div>
   </div>
 
@@ -2319,7 +3350,7 @@ PaperAgent DO (per paper, via RPC)
   </div>
 </div>`;
 
-  return layout("About", content, "about");
+  return layout("About", content, "about", viewer);
 }
 
 // Prompts are imported from paper-agent.ts and passed here as strings
@@ -2717,6 +3748,19 @@ function formatDate(iso: string): string {
     });
   } catch {
     return iso;
+  }
+}
+
+function formatDateTime(value: number): string {
+  try {
+    return new Date(value).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return String(value);
   }
 }
 

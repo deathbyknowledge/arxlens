@@ -9,7 +9,15 @@
  */
 
 import {getAgentByName} from "agents";
-import { feedPage, paperDetailPage, errorPage, aboutPage } from "./html";
+import {
+  feedPage,
+  paperDetailPage,
+  errorPage,
+  aboutPage,
+  loginPage,
+  signupPage,
+  accountPage,
+} from "./html";
 import type { PaperRow, PaperMeta, QueueMessage } from "./types";
 import {
   PAPERS_TABLE,
@@ -18,6 +26,28 @@ import {
   ensurePaperStore,
   parseArxivId,
 } from "./papers";
+import {
+  applyReaderStateEvents,
+  applyUserVote,
+  authenticateUser,
+  createInvite,
+  createSession,
+  destroySessionFromRequest,
+  ensureAuthTables,
+  getInviteCodeStatus,
+  getReaderStateCounts,
+  getUserVotesForPapers,
+  getViewerFromRequest,
+  importReaderState,
+  isAuthError,
+  isBootstrapOpen,
+  listInvitesForUser,
+  registerUser,
+  sanitizeNextPath,
+  serializeClearSessionCookie,
+  serializeSessionCookie,
+  type Viewer,
+} from "./auth";
 export { PaperAgent } from "./paper-agent";
 import { env } from "cloudflare:workers";
 
@@ -28,15 +58,36 @@ type FeedSort = "hot" | "new" | "top";
 const INGEST_RETRY_AFTER_SECONDS = 60;
 const CHALLENGE_RETRY_AFTER_SECONDS = 60;
 const VOTE_RETRY_AFTER_SECONDS = 60;
+const AUTH_RETRY_AFTER_SECONDS = 60;
 const OAI_BASE_URL = "https://oaipmh.arxiv.org/oai";
 const OAI_METADATA_PREFIX = "arXivRaw";
 const INITIAL_HARVEST_LOOKBACK_DAYS = IS_DEV ? 1 : 2;
 
-function htmlResponse(html: string, status = 200): Response {
+function htmlResponse(html: string, status = 200, headers: HeadersInit = {}): Response {
   return new Response(html, {
     status,
-    headers: { "Content-Type": "text/html; charset=utf-8" },
+    headers: {
+      ...headers,
+      "Content-Type": "text/html; charset=utf-8",
+    },
   });
+}
+
+function redirectResponse(location: string, headers: HeadersInit = {}): Response {
+  return new Response(null, {
+    status: 303,
+    headers: {
+      ...headers,
+      Location: location,
+    },
+  });
+}
+
+function noStoreHeaders(headers: HeadersInit = {}): HeadersInit {
+  return {
+    ...headers,
+    "Cache-Control": "no-store",
+  };
 }
 
 function tooManyRequestsResponse(
@@ -97,6 +148,37 @@ function wantsJsonResponse(request: Request): boolean {
   const accept = request.headers.get("accept") ?? "";
   const requestedWith = request.headers.get("x-requested-with") ?? "";
   return accept.includes("application/json") || requestedWith === "fetch";
+}
+
+function currentPath(url: URL): string {
+  return `${url.pathname}${url.search}`;
+}
+
+function authActorKey(viewer: Viewer | null, request: Request): string {
+  return viewer ? `user:${viewer.userId}` : `ip:${rateLimitActorKey(request)}`;
+}
+
+function authRequiredResponse(request: Request, nextPath: string): Response {
+  const loginUrl = `/login?next=${encodeURIComponent(nextPath)}`;
+
+  if (wantsJsonResponse(request)) {
+    return Response.json(
+      {
+        error: "Sign in required.",
+        loginUrl,
+      },
+      {
+        status: 401,
+        headers: noStoreHeaders(),
+      },
+    );
+  }
+
+  return redirectResponse(loginUrl, noStoreHeaders());
+}
+
+function authRedirectTarget(nextPath: string | null | undefined): string {
+  return sanitizeNextPath(nextPath, "/account");
 }
 
 function rateLimitActorKey(request: Request): string {
@@ -455,7 +537,304 @@ async function fetchWithRetry(url: string): Promise<Response> {
   throw new Error("arXiv: exhausted retries on throttled response");
 }
 
-async function handleAbout(env: Env): Promise<Response> {
+async function renderAccountResponse(
+  env: Env,
+  viewer: Viewer,
+  extras: {
+    createdInviteCode?: string;
+    createdInviteExpiresAt?: number;
+    notice?: {
+      kind: "error" | "success" | "info" | "warning";
+      message: string;
+    };
+  } = {},
+): Promise<Response> {
+  const [counts, invites] = await Promise.all([
+    getReaderStateCounts(env.DB, viewer.userId),
+    listInvitesForUser(env.DB, viewer.userId),
+  ]);
+
+  return htmlResponse(
+    accountPage({
+      viewer,
+      savedCount: counts.savedCount,
+      seenCount: counts.seenCount,
+      readCount: counts.readCount,
+      invites,
+      ...(extras.createdInviteCode
+        ? { createdInviteCode: extras.createdInviteCode }
+        : {}),
+      ...(extras.createdInviteExpiresAt
+        ? { createdInviteExpiresAt: extras.createdInviteExpiresAt }
+        : {}),
+      ...(extras.notice ? { notice: extras.notice } : {}),
+    }),
+    200,
+    noStoreHeaders(),
+  );
+}
+
+async function handleLoginPageRequest(
+  url: URL,
+  viewer: Viewer | null,
+): Promise<Response> {
+  const nextPath = authRedirectTarget(url.searchParams.get("next"));
+  if (viewer) {
+    return redirectResponse(nextPath, noStoreHeaders());
+  }
+
+  return htmlResponse(
+    loginPage({
+      nextPath,
+      username: "",
+    }),
+    200,
+    noStoreHeaders(),
+  );
+}
+
+async function handleLogin(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const allowed = await shouldAllow(
+    env.AUTH_LIMITER,
+    `auth:${rateLimitActorKey(request)}`,
+    "login",
+  );
+  if (!allowed) {
+    return tooManyRequestsResponse(
+      request,
+      "Too many login attempts from this browser. Try again in a minute.",
+      AUTH_RETRY_AFTER_SECONDS,
+    );
+  }
+
+  const formData = await request.formData();
+  const username = String(formData.get("username") ?? "");
+  const password = String(formData.get("password") ?? "");
+  const nextPath = authRedirectTarget(formData.get("next") as string | null);
+
+  const viewer = await authenticateUser(env.DB, username, password);
+  if (!viewer) {
+    return htmlResponse(
+      loginPage({
+        nextPath,
+        username,
+        error: "Invalid username or password.",
+      }),
+      400,
+      noStoreHeaders(),
+    );
+  }
+
+  const session = await createSession(env.DB, viewer.userId);
+  return redirectResponse(
+    nextPath,
+    noStoreHeaders({
+      "Set-Cookie": serializeSessionCookie(session.token, request.url),
+    }),
+  );
+}
+
+async function handleSignupPageRequest(
+  url: URL,
+  viewer: Viewer | null,
+  env: Env,
+): Promise<Response> {
+  const nextPath = authRedirectTarget(url.searchParams.get("next"));
+  if (viewer) {
+    return redirectResponse(nextPath, noStoreHeaders());
+  }
+
+  const bootstrapOpen = await isBootstrapOpen(env.DB);
+  const inviteCode = (url.searchParams.get("invite") ?? "").trim();
+  const inviteStatus = !bootstrapOpen && inviteCode
+    ? await getInviteCodeStatus(env.DB, inviteCode)
+    : null;
+
+  return htmlResponse(
+    signupPage({
+      nextPath,
+      username: "",
+      inviteCode,
+      bootstrapOpen,
+      inviteStatus,
+    }),
+    200,
+    noStoreHeaders(),
+  );
+}
+
+async function handleSignup(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const allowed = await shouldAllow(
+    env.AUTH_LIMITER,
+    `auth:${rateLimitActorKey(request)}`,
+    "signup",
+  );
+  if (!allowed) {
+    return tooManyRequestsResponse(
+      request,
+      "Too many signup attempts from this browser. Try again in a minute.",
+      AUTH_RETRY_AFTER_SECONDS,
+    );
+  }
+
+  const formData = await request.formData();
+  const username = String(formData.get("username") ?? "");
+  const password = String(formData.get("password") ?? "");
+  const passwordConfirm = String(formData.get("password_confirm") ?? "");
+  const inviteCode = String(formData.get("invite") ?? "").trim();
+  const nextPath = authRedirectTarget(formData.get("next") as string | null);
+  const bootstrapOpen = await isBootstrapOpen(env.DB);
+  const inviteStatus = !bootstrapOpen && inviteCode
+    ? await getInviteCodeStatus(env.DB, inviteCode)
+    : null;
+
+  if (password !== passwordConfirm) {
+    return htmlResponse(
+      signupPage({
+        nextPath,
+        username,
+        inviteCode,
+        bootstrapOpen,
+        inviteStatus,
+        error: "Passwords do not match.",
+      }),
+      400,
+      noStoreHeaders(),
+    );
+  }
+
+  try {
+    const result = await registerUser(env.DB, {
+      username,
+      password,
+      inviteCode,
+    });
+
+    return redirectResponse(
+      nextPath,
+      noStoreHeaders({
+        "Set-Cookie": serializeSessionCookie(result.sessionToken, request.url),
+      }),
+    );
+  } catch (err) {
+    const message = isAuthError(err)
+      ? err.message
+      : "Could not create account right now. Try again.";
+    return htmlResponse(
+      signupPage({
+        nextPath,
+        username,
+        inviteCode,
+        bootstrapOpen,
+        inviteStatus,
+        error: message,
+      }),
+      isAuthError(err) ? err.status : 500,
+      noStoreHeaders(),
+    );
+  }
+}
+
+async function handleLogout(request: Request, env: Env): Promise<Response> {
+  await destroySessionFromRequest(request, env.DB);
+  return redirectResponse(
+    "/",
+    noStoreHeaders({
+      "Set-Cookie": serializeClearSessionCookie(request.url),
+    }),
+  );
+}
+
+async function handleAccount(
+  request: Request,
+  url: URL,
+  viewer: Viewer | null,
+  env: Env,
+): Promise<Response> {
+  if (!viewer) return authRequiredResponse(request, currentPath(url));
+  return renderAccountResponse(env, viewer);
+}
+
+async function handleCreateInvite(
+  request: Request,
+  url: URL,
+  viewer: Viewer | null,
+  env: Env,
+): Promise<Response> {
+  if (!viewer) return authRequiredResponse(request, currentPath(url));
+
+  try {
+    const invite = await createInvite(env.DB, viewer);
+    return renderAccountResponse(env, viewer, {
+      createdInviteCode: invite.code,
+      createdInviteExpiresAt: invite.expiresAt,
+      notice: {
+        kind: "success",
+        message: "New invite created.",
+      },
+    });
+  } catch (err) {
+    const message = isAuthError(err)
+      ? err.message
+      : "Could not create invite right now. Try again.";
+    return renderAccountResponse(env, viewer, {
+      notice: {
+        kind: isAuthError(err) ? "error" : "warning",
+        message,
+      },
+    });
+  }
+}
+
+async function handleReaderStateImport(
+  request: Request,
+  viewer: Viewer | null,
+  env: Env,
+): Promise<Response> {
+  if (!viewer) return authRequiredResponse(request, "/account");
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON." }, {
+      status: 400,
+      headers: noStoreHeaders(),
+    });
+  }
+
+  const snapshot = await importReaderState(env.DB, viewer.userId, payload);
+  return Response.json(snapshot, { headers: noStoreHeaders() });
+}
+
+async function handleReaderStateEvents(
+  request: Request,
+  viewer: Viewer | null,
+  env: Env,
+): Promise<Response> {
+  if (!viewer) return authRequiredResponse(request, "/account");
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON." }, {
+      status: 400,
+      headers: noStoreHeaders(),
+    });
+  }
+
+  await applyReaderStateEvents(env.DB, viewer.userId, payload);
+  return Response.json({ ok: true }, { headers: noStoreHeaders() });
+}
+
+async function handleAbout(viewer: Viewer | null, env: Env): Promise<Response> {
   const [catRows, countRow, reviewedRow] = await Promise.all([
     env.DB.prepare("SELECT category FROM watched_categories").all<{ category: string }>(),
     env.DB.prepare(`SELECT COUNT(*) as n FROM ${PAPERS_TABLE}`).first<{ n: number }>(),
@@ -466,10 +845,11 @@ async function handleAbout(env: Env): Promise<Response> {
     categories: catRows.results.map(r => r.category),
     paperCount: countRow?.n ?? 0,
     reviewedCount: reviewedRow?.n ?? 0,
+    viewer,
   }));
 }
 
-async function handleFeed(url: URL, env: Env): Promise<Response> {
+async function handleFeed(url: URL, viewer: Viewer | null, env: Env): Promise<Response> {
   const lookupValue = (url.searchParams.get("paper") ?? "").trim();
   if (lookupValue) {
     const paperId = normalizePaperLookup(lookupValue);
@@ -530,6 +910,12 @@ async function handleFeed(url: URL, env: Env): Promise<Response> {
     categories.unshift(selectedCategory);
   }
 
+  const userVotes = await getUserVotesForPapers(
+    env.DB,
+    viewer?.userId,
+    rows.results.map((row) => row.id),
+  );
+
   return htmlResponse(
     feedPage({
       papers: rows.results,
@@ -542,6 +928,9 @@ async function handleFeed(url: URL, env: Env): Promise<Response> {
       reviewedOnly,
       lookupValue,
       lookupError: lookupValue ? `Couldn't understand "${lookupValue}". Paste an arXiv URL or paper ID.` : "",
+      currentPath: currentPath(url),
+      viewer,
+      userVotes,
     }),
   );
 }
@@ -550,6 +939,7 @@ async function handlePaperDetail(
   rawId: string,
   request: Request,
   url: URL,
+  viewer: Viewer | null,
   env: Env,
 ): Promise<Response> {
   const requested = parseArxivId(decodeURIComponent(rawId));
@@ -618,6 +1008,7 @@ async function handlePaperDetail(
 
   const stub = await getAgentByName(env.PAPER_AGENT, paper.versioned_id);
   const { state: doState, challenges } = await stub.getState();
+  const userVotes = await getUserVotesForPapers(env.DB, viewer?.userId, [paper.id]);
 
   return htmlResponse(
     paperDetailPage({
@@ -628,6 +1019,9 @@ async function handlePaperDetail(
       reviewStatus: doState?.reviewStatus ?? paper.review_status,
       challenges,
       challengeQueued: url.searchParams.get("challenge") === "queued",
+      currentPath: `/paper/${encodeURIComponent(paper.id)}`,
+      viewer,
+      userVote: userVotes[paper.id] ?? null,
     }),
   );
 }
@@ -649,21 +1043,27 @@ async function handleVote(
   rawId: string,
   request: Request,
   reqUrl: URL,
+  viewer: Viewer | null,
   env: Env,
 ): Promise<Response> {
   const parsed = parseArxivId(decodeURIComponent(rawId));
   const id = parsed?.baseId ?? decodeURIComponent(rawId);
   const formData = await request.formData();
+  const nextPath = authRedirectTarget(
+    (formData.get("next") as string | null) ?? `/paper/${encodeURIComponent(id)}`,
+  );
   const dir = formData.get("dir") as "up" | "down";
   if (dir !== "up" && dir !== "down")
     return htmlResponse(errorPage(400, "Invalid vote."), 400);
+
+  if (!viewer) return authRequiredResponse(request, nextPath);
 
   const paper = await env.DB.prepare(`SELECT * FROM ${PAPERS_TABLE} WHERE id = ?`)
     .bind(id)
     .first<PaperRow>();
   if (!paper) return htmlResponse(errorPage(404, "Paper not found."), 404);
 
-  const actorKey = rateLimitActorKey(request);
+  const actorKey = authActorKey(viewer, request);
   const allowed = await shouldAllow(
     env.VOTE_LIMITER,
     `vote:${actorKey}`,
@@ -677,22 +1077,30 @@ async function handleVote(
       );
   }
 
+  const update = await applyUserVote(env.DB, viewer.userId, id, dir);
+  await env.DB.prepare(
+    `UPDATE ${PAPERS_TABLE}
+     SET votes_up = ?, votes_down = ?
+     WHERE id = ?`,
+  ).bind(update.votesUp, update.votesDown, id).run();
+
   const stub = await getAgentByName(env.PAPER_AGENT, paper.versioned_id);
-  const { votesUp, votesDown } = await stub.vote(dir);
+  await stub.setVoteTotals(update.votesUp, update.votesDown);
 
   if (wantsJsonResponse(request)) {
-    return Response.json({
-      dir,
-      votesUp,
-      votesDown,
-      score: votesUp - votesDown,
-    });
+    return Response.json(
+      {
+        dir,
+        votesUp: update.votesUp,
+        votesDown: update.votesDown,
+        score: update.votesUp - update.votesDown,
+        userVote: update.userVote,
+      },
+      { headers: noStoreHeaders() },
+    );
   }
 
-  return Response.redirect(
-    new URL(`/paper/${encodeURIComponent(id)}`, reqUrl).toString(),
-    303,
-  );
+  return redirectResponse(new URL(nextPath, reqUrl).toString(), noStoreHeaders());
 }
 
 
@@ -700,11 +1108,18 @@ async function handleChallenge(
   rawId: string,
   request: Request,
   reqUrl: URL,
+  viewer: Viewer | null,
   env: Env,
 ): Promise<Response> {
   const parsed = parseArxivId(decodeURIComponent(rawId));
   const id = parsed?.baseId ?? decodeURIComponent(rawId);
   const formData = await request.formData();
+  const nextPath = authRedirectTarget(
+    (formData.get("next") as string | null) ?? `/paper/${encodeURIComponent(id)}`,
+  );
+
+  if (!viewer) return authRequiredResponse(request, nextPath);
+
   const prompt = (formData.get("prompt") as string | null)?.trim();
   if (!prompt)
     return htmlResponse(errorPage(400, "Challenge prompt is required."), 400);
@@ -714,7 +1129,7 @@ async function handleChallenge(
     .first<PaperRow>();
   if (!paper) return htmlResponse(errorPage(404, "Paper not found."), 404);
 
-  const actorKey = rateLimitActorKey(request);
+  const actorKey = authActorKey(viewer, request);
   const allowed = await shouldAllow(
     env.CHALLENGE_LIMITER,
     `challenge:${actorKey}`,
@@ -729,7 +1144,7 @@ async function handleChallenge(
   }
 
   const stub = await getAgentByName(env.PAPER_AGENT, paper.versioned_id);
-  await stub.challenge(prompt);
+  await stub.challenge(prompt, viewer.userId);
 
   const redirectUrl = new URL(`/paper/${encodeURIComponent(id)}`, reqUrl);
   redirectUrl.searchParams.set("challenge", "queued");
@@ -817,24 +1232,35 @@ function decodeXml(s: string): string {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     await ensurePaperStore(env.DB);
+    await ensureAuthTables(env.DB);
 
     const url = new URL(request.url);
     const path = url.pathname;
+    const viewer = await getViewerFromRequest(request, env.DB);
 
-    if (path === "/" && request.method === "GET") return handleFeed(url, env);
-    if (path === "/about" && request.method === "GET") return handleAbout(env);
+    if (path === "/" && request.method === "GET") return handleFeed(url, viewer, env);
+    if (path === "/about" && request.method === "GET") return handleAbout(viewer, env);
+    if (path === "/login" && request.method === "GET") return handleLoginPageRequest(url, viewer);
+    if (path === "/login" && request.method === "POST") return handleLogin(request, env);
+    if (path === "/signup" && request.method === "GET") return handleSignupPageRequest(url, viewer, env);
+    if (path === "/signup" && request.method === "POST") return handleSignup(request, env);
+    if (path === "/logout" && request.method === "POST") return handleLogout(request, env);
+    if (path === "/account" && request.method === "GET") return handleAccount(request, url, viewer, env);
+    if (path === "/account/invites" && request.method === "POST") return handleCreateInvite(request, url, viewer, env);
+    if (path === "/account/reader-state/import" && request.method === "POST") return handleReaderStateImport(request, viewer, env);
+    if (path === "/account/reader-state/events" && request.method === "POST") return handleReaderStateEvents(request, viewer, env);
 
     const detailMatch = path.match(/^\/paper\/([^/]+)$/);
     if (detailMatch && request.method === "GET")
-      return handlePaperDetail(detailMatch[1], request, url, env);
+      return handlePaperDetail(detailMatch[1], request, url, viewer, env);
 
     const voteMatch = path.match(/^\/paper\/([^/]+)\/vote$/);
     if (voteMatch && request.method === "POST")
-      return handleVote(voteMatch[1], request, url, env);
+      return handleVote(voteMatch[1], request, url, viewer, env);
 
     const challengeMatch = path.match(/^\/paper\/([^/]+)\/challenge$/);
     if (challengeMatch && request.method === "POST")
-      return handleChallenge(challengeMatch[1], request, url, env);
+      return handleChallenge(challengeMatch[1], request, url, viewer, env);
 
     return htmlResponse(errorPage(404, "Page not found"), 404);
   },

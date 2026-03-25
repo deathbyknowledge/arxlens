@@ -530,6 +530,7 @@ export class PaperAgent extends Agent<Env, PaperState> {
     this.sql`CREATE TABLE IF NOT EXISTS challenges (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_prompt TEXT NOT NULL,
+      created_by_user_id TEXT,
       ai_response TEXT NOT NULL,
       response_data TEXT,
       status TEXT NOT NULL DEFAULT 'done',
@@ -545,6 +546,12 @@ export class PaperAgent extends Agent<Env, PaperState> {
 
     try {
       this.sql`ALTER TABLE challenges ADD COLUMN response_data TEXT`;
+    } catch {
+      // Existing tables already have the column.
+    }
+
+    try {
+      this.sql`ALTER TABLE challenges ADD COLUMN created_by_user_id TEXT`;
     } catch {
       // Existing tables already have the column.
     }
@@ -586,13 +593,23 @@ export class PaperAgent extends Agent<Env, PaperState> {
     return { votesUp: this.state.votesUp, votesDown: this.state.votesDown };
   }
 
+  async setVoteTotals(votesUp: number, votesDown: number): Promise<void> {
+    this.setState({
+      ...this.state,
+      votesUp,
+      votesDown,
+    });
+  }
+
   /** User challenges the review. Queues work so the user can keep reading. */
-  async challenge(prompt: string): Promise<{ id: number }> {
+  async challenge(prompt: string, createdByUserId?: string): Promise<{ id: number }> {
     const meta = this.getMeta();
     if (!meta) throw new Error("paper not initialised");
 
-    this
-      .sql`INSERT INTO challenges (user_prompt, ai_response, status) VALUES (${prompt}, '', 'pending')`;
+    this.sql`
+      INSERT INTO challenges (user_prompt, created_by_user_id, ai_response, status)
+      VALUES (${prompt}, ${createdByUserId ?? null}, '', 'pending')
+    `;
     const row = [
       ...this.sql<{ id: number }>`SELECT last_insert_rowid() AS id`,
     ][0];

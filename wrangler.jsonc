@@ -13,7 +13,6 @@
     {
       "binding": "DB",
       "database_name": "arxlens-db",
-      "id": "1b11132b-3729-429c-b6ea-3f62557436ea",
       "database_id": "1b11132b-3729-429c-b6ea-3f62557436ea"
     }
   ],
@@ -58,6 +57,14 @@
       "namespace_id": "83103",
       "simple": {
         "limit": 20,
+        "period": 60
+      }
+    },
+    {
+      "name": "AUTH_LIMITER",
+      "namespace_id": "83104",
+      "simple": {
+        "limit": 10,
         "period": 60
       }
     }
