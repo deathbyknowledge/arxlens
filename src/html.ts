@@ -449,7 +449,7 @@ main {
   display: inline-flex;
   align-items: center;
   padding: 3px 8px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: #f6f8fa;
   color: #57606a;
   font-size: 11px;
@@ -457,14 +457,6 @@ main {
   line-height: 1.2;
 }
 a.category:hover { text-decoration: none; background: #c2e7ff; }
-.paper-preview-label {
-  margin-bottom: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #656d76;
-}
 .paper-intro {
   font-size: 13px;
   color: #1f2328;
@@ -512,6 +504,7 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
 .paper-footer {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
   margin-top: 12px;
@@ -519,6 +512,13 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   border-top: 1px solid #eaeef2;
   font-size: 12px;
   color: #656d76;
+}
+.paper-footer-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 .retention-statuses,
 .paper-actions,
@@ -531,6 +531,21 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
 }
 .paper-actions {
   margin-left: auto;
+}
+.paper-footer-links {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.paper-footer-links a {
+  color: #656d76;
+  font-size: 12px;
+}
+.paper-footer-links a:hover {
+  color: #1f2328;
+  text-decoration: none;
 }
 .retention-chip {
   display: inline-flex;
@@ -563,7 +578,14 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   background: #f6f8fa;
   color: #1f2328;
 }
-.vote-status { color: #656d76; }
+.paper-save-button {
+  width: 32px;
+  height: 32px;
+}
+.paper-save-button .icon {
+  width: 15px;
+  height: 15px;
+}
 .ai-badge {
   display: inline-flex;
   align-items: center;
@@ -1289,6 +1311,10 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   .paper-footer {
     gap: 8px 12px;
   }
+  .paper-footer-links {
+    width: 100%;
+    margin-left: 0;
+  }
   .paper-actions {
     margin-left: 0;
     width: 100%;
@@ -1466,6 +1492,10 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function bookmarkIconHtml() {
+  return '<svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.75h8a.5.5 0 0 1 .5.5v10l-4.5-3-4.5 3v-10a.5.5 0 0 1 .5-.5Z"></path></svg>';
+}
+
 function getPaperMeta(element) {
   if (!(element instanceof HTMLElement)) return null;
 
@@ -1633,8 +1663,19 @@ function updatePaperElement(element) {
 
   element.querySelectorAll('[data-save-toggle]').forEach((target) => {
     if (!(target instanceof HTMLButtonElement)) return;
-    target.textContent = isSaved(meta.id) ? 'Saved' : 'Save for later';
-    target.setAttribute('aria-pressed', isSaved(meta.id) ? 'true' : 'false');
+
+    const saved = isSaved(meta.id);
+    target.classList.toggle('active', saved);
+    target.setAttribute('aria-pressed', saved ? 'true' : 'false');
+
+    if (target.classList.contains('paper-save-button')) {
+      const label = saved ? 'Remove from saved' : 'Save for later';
+      target.setAttribute('aria-label', label);
+      target.title = label;
+      return;
+    }
+
+    target.textContent = saved ? 'Saved' : 'Save for later';
   });
 
   element.querySelectorAll('[data-read-toggle]').forEach((target) => {
@@ -1831,7 +1872,7 @@ function buildSavedCard(savedPaper) {
     id: savedPaper.id,
     fetchedAt: savedPaper.fetchedAt || 0,
   });
-  const versionHtml = savedPaper.version
+  const versionHtml = savedPaper.version && savedPaper.version.toLowerCase() !== 'v1'
     ? '<span class="version-chip">' + escapeHtml(savedPaper.version) + '</span>'
     : '';
   const links = [];
@@ -1844,12 +1885,12 @@ function buildSavedCard(savedPaper) {
     links.push('<a href="' + escapeHtml(savedPaper.pdfUrl) + '" target="_blank" rel="noopener">PDF</a>');
   }
 
-  links.push('<a href="' + escapeHtml(savedPaper.href || ('/paper/' + encodeURIComponent(savedPaper.id))) + '">Open paper</a>');
-
   const metaBits = [];
-  if (savedPaper.version) metaBits.push(versionHtml);
+  if (versionHtml) metaBits.push(versionHtml);
   if (savedPaper.authors) metaBits.push('<span>' + escapeHtml(savedPaper.authors) + '</span>');
   if (savedPaper.publishedLabel) metaBits.push('<span>' + escapeHtml(savedPaper.publishedLabel) + '</span>');
+
+  const utilityLinks = links.join('');
 
   return '<article class="paper-card saved-paper-card" ' +
     'data-paper-id="' + escapeHtml(savedPaper.id) + '" ' +
@@ -1863,19 +1904,20 @@ function buildSavedCard(savedPaper) {
     'data-paper-date-label="' + escapeHtml(savedPaper.publishedLabel || '') + '" ' +
     'data-paper-categories="' + escapeHtml((savedPaper.categories || []).join('|')) + '" ' +
     'data-paper-preview="' + escapeHtml(savedPaper.preview || '') + '" ' +
-    'data-paper-review-status="' + escapeHtml(savedPaper.reviewStatus || '') + '" ' +
-    'data-paper-fetched-at="' + escapeHtml(String(savedPaper.fetchedAt || 0)) + '">' +
+       'data-paper-review-status="' + escapeHtml(savedPaper.reviewStatus || '') + '" ' +
+       'data-paper-fetched-at="' + escapeHtml(String(savedPaper.fetchedAt || 0)) + '">' +
       '<div class="paper-title"><a href="' + escapeHtml(savedPaper.href || ('/paper/' + encodeURIComponent(savedPaper.id))) + '">' + escapeHtml(savedPaper.title || savedPaper.id) + '</a></div>' +
       '<div class="paper-meta">' + categoriesHtml + metaBits.join(' &middot; ') + '</div>' +
-      '<div class="paper-preview-label">Saved for later</div>' +
       '<div class="paper-intro"><p>' + escapeHtml(savedPaper.preview || 'Open this paper to revisit it later.') + '</p></div>' +
       '<div class="paper-footer">' +
-        (savedPaper.reviewStatus ? aiStatusBadgeHtml(savedPaper.reviewStatus) : '') +
-        '<span class="retention-statuses" data-retention-statuses>' + statusHtml + '</span>' +
-        '<div class="paper-actions">' +
-          '<button type="button" class="paper-action" data-save-toggle>Saved</button>' +
+        '<div class="paper-footer-main">' +
+          (savedPaper.reviewStatus ? aiStatusBadgeHtml(savedPaper.reviewStatus) : '') +
+          '<span class="retention-statuses" data-retention-statuses>' + statusHtml + '</span>' +
+        '</div>' +
+        '<div class="paper-footer-links">' +
+          '<button type="button" class="control-icon-button paper-save-button" data-save-toggle aria-label="Remove from saved" title="Remove from saved">' + bookmarkIconHtml() + '</button>' +
           '<button type="button" class="paper-action" data-read-toggle>' + (isRead(savedPaper.id) ? 'Mark unread' : 'Mark read') + '</button>' +
-          links.join('') +
+          utilityLinks +
         '</div>' +
       '</div>' +
     '</article>';
@@ -2555,7 +2597,9 @@ function paperCard(
   const safeIntro = looksLikeStructuredLeak(p.intro) ? "" : p.intro;
   const previewText = compactPlainText(safeIntro || p.abstract, 420);
   const detailHref = `/paper/${encodeURIComponent(p.id)}`;
-  const versionChip = `<span class="version-chip">${htmlEscape(p.version)}</span>`;
+  const versionChip = p.version.toLowerCase() !== "v1"
+    ? `<span class="version-chip">${htmlEscape(p.version)}</span>`
+    : "";
   const voteTitle = viewer ? "Vote" : "Sign in to vote";
 
   const catBadges = categories
@@ -2564,6 +2608,17 @@ function paperCard(
     .join("");
 
   const aiStatus = aiStatusBadge(p.review_status);
+  const footerLinks = [
+    `<button type="button" class="control-icon-button paper-save-button" data-save-toggle aria-label="Save for later" title="Save for later">${bookmarkIcon()}</button>`,
+  ];
+
+  if (p.arxiv_url) {
+    footerLinks.push(`<a href="${htmlEscape(p.arxiv_url)}" target="_blank" rel="noopener">arXiv</a>`);
+  }
+
+  if (p.pdf_url) {
+    footerLinks.push(`<a href="${htmlEscape(p.pdf_url)}" target="_blank" rel="noopener">PDF</a>`);
+  }
 
   return `
 <div
@@ -2610,7 +2665,6 @@ function paperCard(
         &middot;
         <span>${formatDate(p.published_at)}</span>
       </div>
-      <div class="paper-preview-label">${safeIntro ? "AI takeaway" : "Abstract preview"}</div>
       ${safeIntro
         ? `<div class="paper-intro">${renderParagraphs(safeIntro)}</div>`
         : `<div class="paper-abstract">${htmlEscape(p.abstract)}</div>`
@@ -2619,13 +2673,12 @@ function paperCard(
       <div class="abstract-expand">${htmlEscape(p.abstract)}</div>
       <label class="abstract-toggle-label" for="${abstractId}"><span class="toggle-show">Read abstract</span><span class="toggle-hide">Hide abstract</span></label>
       <div class="paper-footer">
-        ${aiStatus}
-        <span class="retention-statuses" data-retention-statuses></span>
-        <span class="vote-status" data-vote-summary>${p.votes_up} up &middot; ${p.votes_down} down</span>
-        <div class="paper-actions">
-          <button type="button" class="paper-action" data-save-toggle>Save for later</button>
-          <a href="${htmlEscape(p.arxiv_url)}" target="_blank" rel="noopener">arXiv</a>
-          <a href="${htmlEscape(p.pdf_url)}" target="_blank" rel="noopener">PDF</a>
+        <div class="paper-footer-main">
+          ${aiStatus}
+          <span class="retention-statuses" data-retention-statuses></span>
+        </div>
+        <div class="paper-footer-links">
+          ${footerLinks.join("")}
         </div>
       </div>
     </div>
