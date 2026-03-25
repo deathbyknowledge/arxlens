@@ -2590,6 +2590,49 @@ function chevronDownIcon(): string {
   return iconSvg('<path d="m4.5 6.5 3.5 3 3.5-3"></path>');
 }
 
+export function buildFeedHref(
+  current: Pick<FeedOptions, "sort" | "page" | "selectedCategory" | "reviewedOnly">,
+  next: {
+    sort?: FeedOptions["sort"];
+    page?: number;
+    selectedCategory?: string | null;
+    reviewedOnly?: boolean;
+  } = {},
+): string {
+  const params = new URLSearchParams();
+  const nextSort = next.sort ?? current.sort;
+  const nextCategory = next.selectedCategory === undefined
+    ? current.selectedCategory
+    : (next.selectedCategory ?? "");
+  const nextReviewedOnly = next.reviewedOnly ?? current.reviewedOnly;
+  const resetPage = next.sort !== undefined ||
+    next.selectedCategory !== undefined ||
+    next.reviewedOnly !== undefined;
+  const nextPage = next.page ?? (resetPage ? 1 : current.page);
+
+  params.set("sort", nextSort);
+  if (nextCategory) params.set("category", nextCategory);
+  if (nextReviewedOnly) params.set("reviewed", "1");
+  if (nextPage > 1) params.set("page", String(nextPage));
+
+  return `/?${params.toString()}`;
+}
+
+export function feedResultsLabel(total: number, selectedCategory: string, reviewedOnly: boolean): string {
+  const totalLabel = `${total} ${total === 1 ? "paper" : "papers"}`;
+  return selectedCategory
+    ? `${totalLabel} in ${selectedCategory}${reviewedOnly ? " · reviewed only" : ""}`
+    : `${totalLabel}${reviewedOnly ? " · reviewed only" : ""}`;
+}
+
+export function feedSortNote(sort: FeedOptions["sort"]): string {
+  return sort === "hot"
+    ? "Trending mixes fresh papers with community signal."
+    : sort === "new"
+      ? "Newest is the raw publish-time firehose."
+      : "Top is the highest-scoring timeline.";
+}
+
 export function feedPage(opts: FeedOptions): string {
   const {
     papers,
@@ -2608,46 +2651,21 @@ export function feedPage(opts: FeedOptions): string {
   } = opts;
   const totalPages = Math.ceil(total / pageSize);
   const hasFilters = reviewedOnly || !!selectedCategory;
-
+  const feedState = { sort, page, selectedCategory, reviewedOnly };
   const feedHref = (next: {
     sort?: FeedOptions["sort"];
     page?: number;
     selectedCategory?: string | null;
     reviewedOnly?: boolean;
-  } = {}): string => {
-    const params = new URLSearchParams();
-    const nextSort = next.sort ?? sort;
-    const nextCategory = next.selectedCategory === undefined
-      ? selectedCategory
-      : (next.selectedCategory ?? "");
-    const nextReviewedOnly = next.reviewedOnly ?? reviewedOnly;
-    const resetPage = next.sort !== undefined || next.selectedCategory !== undefined || next.reviewedOnly !== undefined;
-    const nextPage = next.page ?? (resetPage ? 1 : page);
-
-    params.set("sort", nextSort);
-    if (nextCategory) params.set("category", nextCategory);
-    if (nextReviewedOnly) params.set("reviewed", "1");
-    if (nextPage > 1) params.set("page", String(nextPage));
-
-    return `/?${params.toString()}`;
-  };
+  } = {}): string => buildFeedHref(feedState, next);
 
   const tabHtml = (label: string, value: string) => {
     const active = sort === value ? " active" : "";
     return `<a href="${feedHref({ sort: value as FeedOptions["sort"] })}" class="tab${active}">${label}</a>`;
   };
 
-  const totalLabel = `${total} ${total === 1 ? "paper" : "papers"}`;
-  const resultsLabel = selectedCategory
-    ? `${totalLabel} in ${selectedCategory}${reviewedOnly ? " · reviewed only" : ""}`
-    : `${totalLabel}${reviewedOnly ? " · reviewed only" : ""}`;
-
-  const sortNote =
-    sort === "hot"
-      ? "Trending mixes fresh papers with community signal."
-      : sort === "new"
-        ? "Newest is the raw publish-time firehose."
-        : "Top is the highest-scoring timeline.";
+  const resultsLabel = feedResultsLabel(total, selectedCategory, reviewedOnly);
+  const sortNote = feedSortNote(sort);
 
   const header = `
 <div class="feed-header">
@@ -3023,31 +3041,28 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
   return layout(paper.title, content, "feed", viewer);
 }
 
-function detailSummarySection(
+export function detailSummaryCards(
   paper: PaperRow,
   intro: string,
   review: string,
   reviewData: ReviewData | null,
   reviewStatus: string,
-): string {
+): Array<{
+  label: string;
+  text: string;
+  tone: "default" | "status";
+}> {
   const introBlocks = splitTextBlocks(intro);
   const resolvedReview = resolveReviewData(review, reviewData);
   const missingReviewContent = reviewStatus === "done" && !intro && !review && !reviewData;
-  const statusCopy: Record<string, string> = {
-    pending: "The AI summary is queued. Use the abstract below while the full review gets ready.",
-    reviewing: "The AI is still reading and checking this paper now. The first full critique will appear below shortly.",
-    error: "The review hit a snag and will retry automatically. The abstract is still available below.",
-    done: "The full intro and critique are ready below, and you can challenge any claim you want the AI to revisit.",
-  };
-
   const introPrimary = introBlocks[0] ?? paper.abstract;
   const introSecondary = introBlocks[1] ?? (tailSentences(introPrimary, 2) || introPrimary);
   const mainConcern = getReviewSection(resolvedReview, "main_concerns")?.body;
   const reviewPrimary = missingReviewContent
     ? "This cached review is malformed and should be regenerated."
-    : (getReviewSection(resolvedReview, "verdict")?.body || mainConcern || statusCopy.done);
+    : (getReviewSection(resolvedReview, "verdict")?.body || mainConcern || reviewStatusCopy(reviewStatus));
 
-  const cards = [
+  return [
     {
       label: "What it does",
       text: summarizeBlock(headSentences(introPrimary, 2) || introPrimary, 240),
@@ -3063,12 +3078,33 @@ function detailSummarySection(
       text: summarizeBlock(
         reviewStatus === "done"
           ? (headSentences(reviewPrimary, 2) || reviewPrimary)
-          : (statusCopy[reviewStatus] ?? statusCopy.pending),
+          : reviewStatusCopy(reviewStatus),
         240,
       ),
       tone: reviewStatus === "done" ? "default" : "status",
     },
   ];
+}
+
+export function reviewStatusCopy(status: string): string {
+  const copy: Record<string, string> = {
+    pending: "The AI summary is queued. Use the abstract below while the full review gets ready.",
+    reviewing: "The AI is still reading and checking this paper now. The first full critique will appear below shortly.",
+    error: "The review hit a snag and will retry automatically. The abstract is still available below.",
+    done: "The full intro and critique are ready below, and you can challenge any claim you want the AI to revisit.",
+  };
+
+  return copy[status] ?? copy.pending;
+}
+
+function detailSummarySection(
+  paper: PaperRow,
+  intro: string,
+  review: string,
+  reviewData: ReviewData | null,
+  reviewStatus: string,
+): string {
+  const cards = detailSummaryCards(paper, intro, review, reviewData, reviewStatus);
 
   return `
 <div class="summary-grid" id="summary">
@@ -3903,13 +3939,13 @@ function summarizeBlock(text: string, maxChars: number): string {
   return `${flat.slice(0, maxChars).replace(/\s+\S*$/, "")}...`;
 }
 
-function compactPlainText(text: string, maxChars: number): string {
+export function compactPlainText(text: string, maxChars: number): string {
   const flat = text.replace(/\s+/g, " ").trim();
   if (flat.length <= maxChars) return flat;
   return `${flat.slice(0, maxChars).replace(/\s+\S*$/, "")}...`;
 }
 
-function looksLikeStructuredLeak(text: string): boolean {
+export function looksLikeStructuredLeak(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed) return false;
 
@@ -3997,7 +4033,7 @@ function parseReviewSections(review: string): {
   return { verdict, sections };
 }
 
-function resolveReviewData(review: string, reviewData: ReviewData | null): ReviewData {
+export function resolveReviewData(review: string, reviewData: ReviewData | null): ReviewData {
   if (reviewData && reviewData.sections.length > 0) return reviewData;
 
   const parsed = parseReviewSections(review);
@@ -4027,7 +4063,7 @@ function resolveReviewData(review: string, reviewData: ReviewData | null): Revie
   };
 }
 
-function getReviewSection(reviewData: ReviewData, key: string): ReviewSectionData | null {
+export function getReviewSection(reviewData: ReviewData, key: string): ReviewSectionData | null {
   return reviewData.sections.find((section) => section.key === key) ?? null;
 }
 
@@ -4143,7 +4179,7 @@ function escapeWithMath(text: string): string {
     .join("");
 }
 
-function formatDate(iso: string): string {
+export function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleDateString("en-US", {
       year: "numeric",
@@ -4155,7 +4191,7 @@ function formatDate(iso: string): string {
   }
 }
 
-function formatDateTime(value: number): string {
+export function formatDateTime(value: number): string {
   try {
     return new Date(value).toLocaleString("en-US", {
       month: "short",

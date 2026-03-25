@@ -19,6 +19,7 @@ import {
   accountPage,
   adminPage,
 } from "./html";
+import { feedPageMarkdown, paperDetailPageMarkdown } from "./markdown";
 import type { PaperRow, PaperMeta, QueueMessage } from "./types";
 import {
   PAPERS_TABLE,
@@ -52,6 +53,13 @@ import {
   updateUserForAdmin,
   type Viewer,
 } from "./auth";
+import {
+  appendNegotiatedFormat,
+  markdownResponse,
+  negotiationErrorResponse,
+  preferredRepresentation,
+  type NegotiatedRepresentation,
+} from "./presentation";
 export { PaperAgent } from "./paper-agent";
 import { env } from "cloudflare:workers";
 
@@ -68,22 +76,22 @@ const OAI_METADATA_PREFIX = "arXivRaw";
 const INITIAL_HARVEST_LOOKBACK_DAYS = IS_DEV ? 1 : 2;
 
 function htmlResponse(html: string, status = 200, headers: HeadersInit = {}): Response {
+  const responseHeaders = new Headers(headers);
+  responseHeaders.set("Content-Type", "text/html; charset=utf-8");
+
   return new Response(html, {
     status,
-    headers: {
-      ...headers,
-      "Content-Type": "text/html; charset=utf-8",
-    },
+    headers: responseHeaders,
   });
 }
 
 function redirectResponse(location: string, headers: HeadersInit = {}): Response {
+  const responseHeaders = new Headers(headers);
+  responseHeaders.set("Location", location);
+
   return new Response(null, {
     status: 303,
-    headers: {
-      ...headers,
-      Location: location,
-    },
+    headers: responseHeaders,
   });
 }
 
@@ -92,6 +100,63 @@ function noStoreHeaders(headers: HeadersInit = {}): HeadersInit {
     ...headers,
     "Cache-Control": "no-store",
   };
+}
+
+function publicPageSelection(request: Request): NegotiatedRepresentation | Response {
+  const selection = preferredRepresentation(request, ["html", "markdown"], "html");
+  return "kind" in selection ? negotiationErrorResponse(selection) : selection;
+}
+
+function headersWithVaryAccept(
+  headers: HeadersInit = {},
+  selection: NegotiatedRepresentation,
+): HeadersInit {
+  if (!selection.varyAccept) return headers;
+
+  const nextHeaders = new Headers(headers);
+  const vary = nextHeaders.get("Vary") ?? "";
+  const values = vary
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (!values.some((value) => value.toLowerCase() === "accept")) {
+    values.push("Accept");
+  }
+
+  nextHeaders.set("Vary", values.join(", "));
+  return nextHeaders;
+}
+
+function formatPathForSelection(path: string, selection: NegotiatedRepresentation): string {
+  return selection.representation === "markdown"
+    ? appendNegotiatedFormat(path, selection)
+    : path;
+}
+
+function publicPageResponse(
+  selection: NegotiatedRepresentation,
+  html: string,
+  markdown: string,
+): Response {
+  return selection.representation === "markdown"
+    ? markdownResponse(markdown, selection)
+    : htmlResponse(html, 200, headersWithVaryAccept({}, selection));
+}
+
+function publicPageErrorResponse(
+  selection: NegotiatedRepresentation,
+  status: number,
+  message: string,
+  headers: HeadersInit = {},
+): Response {
+  return selection.representation === "markdown"
+    ? markdownResponse(`# ${status} Error\n\n${message}\n`, selection, { status, headers })
+    : htmlResponse(
+      errorPage(status, message),
+      status,
+      headersWithVaryAccept(headers, selection),
+    );
 }
 
 function tooManyRequestsResponse(
@@ -780,6 +845,9 @@ async function handleSignup(
       }),
     );
   } catch (err) {
+    if (!isAuthError(err)) {
+      console.error("[signup] unexpected error:", err);
+    }
     const message = isAuthError(err)
       ? err.message
       : "Could not create account right now. Try again.";
@@ -976,13 +1044,25 @@ async function handleAbout(viewer: Viewer | null, env: Env): Promise<Response> {
   }));
 }
 
-async function handleFeed(url: URL, viewer: Viewer | null, env: Env): Promise<Response> {
+async function handleFeed(
+  request: Request,
+  url: URL,
+  viewer: Viewer | null,
+  env: Env,
+): Promise<Response> {
+  const selectionResult = publicPageSelection(request);
+  if (selectionResult instanceof Response) return selectionResult;
+  const selection = selectionResult;
+
   const lookupValue = (url.searchParams.get("paper") ?? "").trim();
   if (lookupValue) {
     const paperId = normalizePaperLookup(lookupValue);
     if (paperId) {
       return Response.redirect(
-        new URL(`/paper/${encodeURIComponent(paperId)}`, url).toString(),
+        new URL(
+          formatPathForSelection(`/paper/${encodeURIComponent(paperId)}`, selection),
+          url,
+        ).toString(),
         303,
       );
     }
@@ -993,7 +1073,8 @@ async function handleFeed(url: URL, viewer: Viewer | null, env: Env): Promise<Re
     : "hot";
   const selectedCategory = (url.searchParams.get("category") ?? "").trim();
   const reviewedOnly = url.searchParams.get("reviewed") === "1";
-  const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10));
+  const pageValue = parseInt(url.searchParams.get("page") ?? "1", 10);
+  const page = Number.isFinite(pageValue) && pageValue > 0 ? pageValue : 1;
   const offset = (page - 1) * PAGE_SIZE;
 
   const whereClauses: string[] = [];
@@ -1043,22 +1124,26 @@ async function handleFeed(url: URL, viewer: Viewer | null, env: Env): Promise<Re
     rows.results.map((row) => row.id),
   );
 
-  return htmlResponse(
-    feedPage({
-      papers: rows.results,
-      sort,
-      page,
-      total: countRow?.n ?? 0,
-      pageSize: PAGE_SIZE,
-      categories,
-      selectedCategory,
-      reviewedOnly,
-      lookupValue,
-      lookupError: lookupValue ? `Couldn't understand "${lookupValue}". Paste an arXiv URL or paper ID.` : "",
-      currentPath: currentPath(url),
-      viewer,
-      userVotes,
-    }),
+  const pageOptions = {
+    papers: rows.results,
+    sort,
+    page,
+    total: countRow?.n ?? 0,
+    pageSize: PAGE_SIZE,
+    categories,
+    selectedCategory,
+    reviewedOnly,
+    lookupValue,
+    lookupError: lookupValue ? `Couldn't understand "${lookupValue}". Paste an arXiv URL or paper ID.` : "",
+    currentPath: currentPath(url),
+    viewer,
+    userVotes,
+  };
+
+  return publicPageResponse(
+    selection,
+    feedPage(pageOptions),
+    feedPageMarkdown(pageOptions, selection),
   );
 }
 
@@ -1069,9 +1154,17 @@ async function handlePaperDetail(
   viewer: Viewer | null,
   env: Env,
 ): Promise<Response> {
+  const selectionResult = publicPageSelection(request);
+  if (selectionResult instanceof Response) return selectionResult;
+  const selection = selectionResult;
+
   const requested = parseArxivId(decodeURIComponent(rawId));
   if (!requested) {
-    return htmlResponse(errorPage(404, `Paper "${decodeURIComponent(rawId)}" not found on arXiv.`), 404);
+    return publicPageErrorResponse(
+      selection,
+      404,
+      `Paper "${decodeURIComponent(rawId)}" not found on arXiv.`,
+    );
   }
 
   let id = requested.baseId;
@@ -1092,18 +1185,22 @@ async function handlePaperDetail(
       `ingest:${requested.versionedId}`,
     );
     if (!allowed) {
-      return tooManyRequestsResponse(
-        request,
+      return publicPageErrorResponse(
+        selection,
+        429,
         "Too many on-demand paper lookups from this browser. Try again in a minute.",
-        INGEST_RETRY_AFTER_SECONDS,
+        noStoreHeaders({
+          "Retry-After": String(INGEST_RETRY_AFTER_SECONDS),
+        }),
       );
     }
 
     const meta = await fetchPaperById(requested.versionedId);
     if (!meta)
-      return htmlResponse(
-        errorPage(404, `Paper "${requested.versionedId}" not found on arXiv.`),
+      return publicPageErrorResponse(
+        selection,
         404,
+        `Paper "${requested.versionedId}" not found on arXiv.`,
       );
 
     // Init via RPC (DO will upsert its own D1 row)
@@ -1112,7 +1209,10 @@ async function handlePaperDetail(
 
     if (decodeURIComponent(rawId) !== meta.id) {
       return Response.redirect(
-        new URL(`/paper/${encodeURIComponent(meta.id)}`, url).toString(),
+        new URL(
+          formatPathForSelection(`/paper/${encodeURIComponent(meta.id)}`, selection),
+          url,
+        ).toString(),
         303,
       );
     }
@@ -1123,12 +1223,15 @@ async function handlePaperDetail(
       .bind(meta.id)
       .first<PaperRow>();
     if (!paper)
-      return htmlResponse(errorPage(500, "Failed to ingest paper."), 500);
+      return publicPageErrorResponse(selection, 500, "Failed to ingest paper.");
   }
 
   if (decodeURIComponent(rawId) !== paper.id) {
     return Response.redirect(
-      new URL(`/paper/${encodeURIComponent(paper.id)}`, url).toString(),
+      new URL(
+        formatPathForSelection(`/paper/${encodeURIComponent(paper.id)}`, selection),
+        url,
+      ).toString(),
       303,
     );
   }
@@ -1137,19 +1240,23 @@ async function handlePaperDetail(
   const { state: doState, challenges } = await stub.getState();
   const userVotes = await getUserVotesForPapers(env.DB, viewer?.userId, [paper.id]);
 
-  return htmlResponse(
-    paperDetailPage({
-      paper,
-      intro: doState?.intro ?? "",
-      review: doState?.review ?? "",
-      reviewData: doState?.reviewData ?? null,
-      reviewStatus: doState?.reviewStatus ?? paper.review_status,
-      challenges,
-      challengeQueued: url.searchParams.get("challenge") === "queued",
-      currentPath: `/paper/${encodeURIComponent(paper.id)}`,
-      viewer,
-      userVote: userVotes[paper.id] ?? null,
-    }),
+  const pageOptions = {
+    paper,
+    intro: doState?.intro ?? "",
+    review: doState?.review ?? "",
+    reviewData: doState?.reviewData ?? null,
+    reviewStatus: doState?.reviewStatus ?? paper.review_status,
+    challenges,
+    challengeQueued: url.searchParams.get("challenge") === "queued",
+    currentPath: `/paper/${encodeURIComponent(paper.id)}`,
+    viewer,
+    userVote: userVotes[paper.id] ?? null,
+  };
+
+  return publicPageResponse(
+    selection,
+    paperDetailPage(pageOptions),
+    paperDetailPageMarkdown(pageOptions, selection),
   );
 }
 
@@ -1365,7 +1472,7 @@ export default {
     const path = url.pathname;
     const viewer = await getViewerFromRequest(request, env.DB);
 
-    if (path === "/" && request.method === "GET") return handleFeed(url, viewer, env);
+    if (path === "/" && request.method === "GET") return handleFeed(request, url, viewer, env);
     if (path === "/about" && request.method === "GET") return handleAbout(viewer, env);
     if (path === "/login" && request.method === "GET") return handleLoginPageRequest(url, viewer);
     if (path === "/login" && request.method === "POST") return handleLogin(request, env);

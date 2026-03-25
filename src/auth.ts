@@ -9,7 +9,7 @@ declare global {
 const SESSION_COOKIE_NAME = "arxlens_session";
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const INVITE_TTL_MS = 1000 * 60 * 60 * 24 * 14;
-const PASSWORD_ITERATIONS = 600_000;
+const PASSWORD_ITERATIONS = 100_000;
 const PASSWORD_HASH_BYTES = 32;
 const MIN_PASSWORD_LENGTH = 10;
 const MAX_PASSWORD_LENGTH = 200;
