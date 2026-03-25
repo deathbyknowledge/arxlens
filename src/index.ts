@@ -17,6 +17,7 @@ import {
   loginPage,
   signupPage,
   accountPage,
+  adminPage,
 } from "./html";
 import type { PaperRow, PaperMeta, QueueMessage } from "./types";
 import {
@@ -41,11 +42,14 @@ import {
   importReaderState,
   isAuthError,
   isBootstrapOpen,
+  listInvitesForAdmin,
   listInvitesForUser,
+  listUsersForAdmin,
   registerUser,
   sanitizeNextPath,
   serializeClearSessionCookie,
   serializeSessionCookie,
+  updateUserForAdmin,
   type Viewer,
 } from "./auth";
 export { PaperAgent } from "./paper-agent";
@@ -175,6 +179,32 @@ function authRequiredResponse(request: Request, nextPath: string): Response {
   }
 
   return redirectResponse(loginUrl, noStoreHeaders());
+}
+
+function adminRequiredResponse(
+  request: Request,
+  url: URL,
+  viewer: Viewer | null,
+): Response | null {
+  if (!viewer) {
+    return authRequiredResponse(request, currentPath(url));
+  }
+
+  if (viewer.role !== "admin") {
+    if (wantsJsonResponse(request)) {
+      return Response.json(
+        { error: "Admin access required." },
+        {
+          status: 403,
+          headers: noStoreHeaders(),
+        },
+      );
+    }
+
+    return htmlResponse(errorPage(403, "Admin access required."), 403, noStoreHeaders());
+  }
+
+  return null;
 }
 
 function authRedirectTarget(nextPath: string | null | undefined): string {
@@ -574,6 +604,33 @@ async function renderAccountResponse(
   );
 }
 
+async function renderAdminResponse(
+  env: Env,
+  viewer: Viewer,
+  extras: {
+    notice?: {
+      kind: "error" | "success" | "info" | "warning";
+      message: string;
+    };
+  } = {},
+): Promise<Response> {
+  const [users, invites] = await Promise.all([
+    listUsersForAdmin(env.DB),
+    listInvitesForAdmin(env.DB),
+  ]);
+
+  return htmlResponse(
+    adminPage({
+      viewer,
+      users,
+      invites,
+      ...(extras.notice ? { notice: extras.notice } : {}),
+    }),
+    200,
+    noStoreHeaders(),
+  );
+}
+
 async function handleLoginPageRequest(
   url: URL,
   viewer: Viewer | null,
@@ -759,6 +816,76 @@ async function handleAccount(
 ): Promise<Response> {
   if (!viewer) return authRequiredResponse(request, currentPath(url));
   return renderAccountResponse(env, viewer);
+}
+
+async function handleAdmin(
+  request: Request,
+  url: URL,
+  viewer: Viewer | null,
+  env: Env,
+): Promise<Response> {
+  const guard = adminRequiredResponse(request, url, viewer);
+  if (guard) return guard;
+  return renderAdminResponse(env, viewer!);
+}
+
+async function handleAdminUserUpdate(
+  userId: string,
+  request: Request,
+  url: URL,
+  viewer: Viewer | null,
+  env: Env,
+): Promise<Response> {
+  const guard = adminRequiredResponse(request, url, viewer);
+  if (guard) return guard;
+
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
+  const value = String(formData.get("value") ?? "");
+
+  try {
+    if (intent === "status") {
+      await updateUserForAdmin(env.DB, viewer!, {
+        userId,
+        status: value === "disabled" ? "disabled" : "active",
+      });
+
+      return renderAdminResponse(env, viewer!, {
+        notice: {
+          kind: "success",
+          message: value === "disabled" ? "User disabled." : "User re-enabled.",
+        },
+      });
+    }
+
+    if (intent === "invites") {
+      await updateUserForAdmin(env.DB, viewer!, {
+        userId,
+        canCreateInvites: value === "1",
+      });
+
+      return renderAdminResponse(env, viewer!, {
+        notice: {
+          kind: "success",
+          message: value === "1" ? "Invite access granted." : "Invite access revoked.",
+        },
+      });
+    }
+
+    return renderAdminResponse(env, viewer!, {
+      notice: {
+        kind: "error",
+        message: "Unknown admin action.",
+      },
+    });
+  } catch (err) {
+    return renderAdminResponse(env, viewer!, {
+      notice: {
+        kind: isAuthError(err) ? "error" : "warning",
+        message: isAuthError(err) ? err.message : "Could not update that user right now.",
+      },
+    });
+  }
 }
 
 async function handleCreateInvite(
@@ -1249,6 +1376,12 @@ export default {
     if (path === "/account/invites" && request.method === "POST") return handleCreateInvite(request, url, viewer, env);
     if (path === "/account/reader-state/import" && request.method === "POST") return handleReaderStateImport(request, viewer, env);
     if (path === "/account/reader-state/events" && request.method === "POST") return handleReaderStateEvents(request, viewer, env);
+    if (path === "/admin" && request.method === "GET") return handleAdmin(request, url, viewer, env);
+
+    const adminUserMatch = path.match(/^\/admin\/users\/([^/]+)$/);
+    if (adminUserMatch && request.method === "POST") {
+      return handleAdminUserUpdate(adminUserMatch[1], request, url, viewer, env);
+    }
 
     const detailMatch = path.match(/^\/paper\/([^/]+)$/);
     if (detailMatch && request.method === "GET")

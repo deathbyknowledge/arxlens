@@ -10,7 +10,13 @@ import type {
   ReviewSectionData,
   ReviewCitation,
 } from "./types";
-import type { InviteCodeStatus, InviteSummary, Viewer } from "./auth";
+import type {
+  AdminInviteSummary,
+  AdminUserSummary,
+  InviteCodeStatus,
+  InviteSummary,
+  Viewer,
+} from "./auth";
 
 // ---------------------------------------------------------------------------
 // Shared CSS
@@ -879,6 +885,13 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   flex-direction: column;
   gap: 10px;
 }
+.account-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 .account-list-row {
   display: flex;
   align-items: center;
@@ -921,6 +934,40 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   color: #fff;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
+}
+.admin-meta-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.admin-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.admin-badge.role-admin { background: #ddf4ff; color: #0550ae; }
+.admin-badge.role-member { background: #f6f8fa; color: #57606a; }
+.admin-badge.status-active { background: #dafbe1; color: #116329; }
+.admin-badge.status-disabled { background: #ffebe9; color: #82071e; }
+.admin-badge.invites-on { background: #fff8c5; color: #7d4e00; }
+.admin-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.admin-actions form {
+  margin: 0;
+}
+.admin-muted {
+  font-size: 12px;
+  color: #656d76;
 }
 .challenge-lockup {
   display: flex;
@@ -1442,6 +1489,10 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   .reader-statuses,
   .paper-actions {
     width: 100%;
+  }
+  .admin-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
   .detail-jumps,
   .detail-link-list {
@@ -2422,7 +2473,17 @@ function viewerScriptJson(viewer: Viewer | null): string {
     .replace(/&/g, "\\u0026");
 }
 
-function renderAuthNav(activeNav: "feed" | "about" | "account", viewer: Viewer | null): string {
+type NavKey = "feed" | "about" | "account" | "admin";
+
+function renderPrimaryNav(activeNav: NavKey, viewer: Viewer | null): string {
+  return `<nav class="nav-links">
+    <a href="/"${activeNav === "feed" ? ' class="active"' : ""}>Feed</a>
+    <a href="/about"${activeNav === "about" ? ' class="active"' : ""}>About</a>
+    ${viewer?.role === "admin" ? `<a href="/admin"${activeNav === "admin" ? ' class="active"' : ""}>Admin</a>` : ""}
+  </nav>`;
+}
+
+function renderAuthNav(activeNav: NavKey, viewer: Viewer | null): string {
   if (!viewer) {
     return `<div class="nav-auth">
       <a href="/login" class="paper-action">Log in</a>
@@ -2441,7 +2502,7 @@ function renderAuthNav(activeNav: "feed" | "about" | "account", viewer: Viewer |
 function layout(
   title: string,
   content: string,
-  activeNav: "feed" | "about" | "account" = "feed",
+  activeNav: NavKey = "feed",
   viewer: Viewer | null = null,
 ): string {
   return `<!DOCTYPE html>
@@ -2458,10 +2519,7 @@ function layout(
   <div class="global-nav">
     <a href="/" class="logo">arx<span>lens</span></a>
     <div class="nav-side">
-      <nav class="nav-links">
-        <a href="/"${activeNav === "feed" ? ' class="active"' : ""}>Feed</a>
-        <a href="/about"${activeNav === "about" ? ' class="active"' : ""}>About</a>
-      </nav>
+      ${renderPrimaryNav(activeNav, viewer)}
       ${renderAuthNav(activeNav, viewer)}
     </div>
   </div>
@@ -3425,6 +3483,9 @@ export function accountPage(opts: AccountPageOptions): string {
       <div class="account-panel-title">Privacy model</div>
       <div class="account-note">Your username is the only user identifier this app asks for. Votes and challenges are tied to your account for moderation, but usernames are not shown publicly on paper pages.</div>
       <div class="account-note">There is no email reset flow yet, so keep your username and password somewhere safe.</div>
+      ${viewer.role === "admin"
+        ? `<div class="field-row"><a href="/admin" class="btn btn-quiet">Open admin</a></div>`
+        : ""}
     </section>
 
     <section class="account-panel full">
@@ -3442,6 +3503,128 @@ export function accountPage(opts: AccountPageOptions): string {
 </div>`;
 
   return layout("Account", content, "account", viewer);
+}
+
+export interface AdminPageOptions {
+  viewer: Viewer;
+  users: AdminUserSummary[];
+  invites: AdminInviteSummary[];
+  notice?: {
+    kind: "error" | "success" | "info" | "warning";
+    message: string;
+  };
+}
+
+export function adminPage(opts: AdminPageOptions): string {
+  const { viewer, users, invites, notice } = opts;
+  const activeUsers = users.filter((user) => user.status === "active").length;
+  const inviteEnabledUsers = users.filter((user) => user.canCreateInvites).length;
+
+  const userList = users.length === 0
+    ? `<div class="account-note">No users yet.</div>`
+    : `<div class="account-list">${users.map((user) => {
+         const isSelf = user.id === viewer.userId;
+         const inviterLabel = user.inviterUsername ? `@${user.inviterUsername}` : "Bootstrap";
+         const roleBadge = `<span class="admin-badge role-${user.role === "admin" ? "admin" : "member"}">${user.role === "admin" ? "Admin" : "Member"}</span>`;
+         const statusBadge = `<span class="admin-badge status-${user.status === "active" ? "active" : "disabled"}">${user.status === "active" ? "Active" : "Disabled"}</span>`;
+         const inviteBadge = user.canCreateInvites
+           ? `<span class="admin-badge invites-on">Can invite</span>`
+           : "";
+         const statusActionLabel = user.status === "active" ? "Disable" : "Re-enable";
+         const nextStatus = user.status === "active" ? "disabled" : "active";
+         const inviteActionLabel = user.canCreateInvites ? "Revoke invites" : "Allow invites";
+         const nextInviteValue = user.canCreateInvites ? "0" : "1";
+
+         return `<div class="account-list-row">
+           <div class="invite-meta">
+             <div class="admin-meta-line">
+               <div class="invite-status">@${htmlEscape(user.username)}</div>
+               ${roleBadge}
+               ${statusBadge}
+               ${inviteBadge}
+             </div>
+             <div class="invite-detail">Joined ${htmlEscape(formatDateTime(user.createdAt))} · invited by ${htmlEscape(inviterLabel)} · ${user.inviteCount} invites created · ${user.savedCount} saved · ${user.readCount} read</div>
+           </div>
+           <div class="admin-actions">
+             ${isSelf
+               ? `<span class="admin-muted">Current admin</span>`
+               : `<form method="POST" action="/admin/users/${encodeURIComponent(user.id)}">
+                    <input type="hidden" name="intent" value="status">
+                    <input type="hidden" name="value" value="${nextStatus}">
+                    <button type="submit" class="paper-action">${statusActionLabel}</button>
+                  </form>`}
+             <form method="POST" action="/admin/users/${encodeURIComponent(user.id)}">
+               <input type="hidden" name="intent" value="invites">
+               <input type="hidden" name="value" value="${nextInviteValue}">
+               <button type="submit" class="paper-action">${inviteActionLabel}</button>
+             </form>
+           </div>
+         </div>`;
+       }).join("")}</div>`;
+
+  const inviteList = invites.length === 0
+    ? `<div class="account-note">No invites yet.</div>`
+    : `<div class="account-list">${invites.map((invite) => `<div class="account-list-row">
+         <div class="invite-meta">
+           <div class="admin-meta-line">
+             <div class="invite-status">Created by @${htmlEscape(invite.creatorUsername)}</div>
+             <span class="admin-badge ${invite.status === "available" ? "invites-on" : invite.status === "claimed" ? "role-member" : "status-disabled"}">${htmlEscape(invite.status === "available" ? "Available" : invite.status === "claimed" ? "Claimed" : "Expired")}</span>
+           </div>
+           <div class="invite-detail">Created ${htmlEscape(formatDateTime(invite.createdAt))} · expires ${htmlEscape(formatDateTime(invite.expiresAt))}${invite.claimedUsername ? ` · claimed by @${htmlEscape(invite.claimedUsername)}` : ""}${invite.usedAt ? ` · used ${htmlEscape(formatDateTime(invite.usedAt))}` : ""}</div>
+         </div>
+       </div>`).join("")}</div>`;
+
+  const content = `
+<div class="paper-detail">
+  <h1 class="paper-detail-title">Admin</h1>
+  <div class="paper-detail-meta">Internal controls for members, invite access, and account state.</div>
+
+  ${notice ? noticeHtml(notice.kind, notice.message) : ""}
+
+  <div class="account-grid">
+    <section class="account-panel">
+      <div class="account-panel-title">Users</div>
+      <div class="account-stat-grid">
+        <div class="account-stat">
+          <div class="account-stat-value">${users.length}</div>
+          <div class="account-stat-label">Total</div>
+        </div>
+        <div class="account-stat">
+          <div class="account-stat-value">${activeUsers}</div>
+          <div class="account-stat-label">Active</div>
+        </div>
+        <div class="account-stat">
+          <div class="account-stat-value">${inviteEnabledUsers}</div>
+          <div class="account-stat-label">Can invite</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="account-panel">
+      <div class="account-panel-title">Access model</div>
+      <div class="account-note">Disable an account to block future sessions. Toggle invite access without changing role.</div>
+      <div class="account-note">Challenge moderation is intentionally out of scope for this first admin pass.</div>
+    </section>
+
+    <section class="account-panel full">
+      <div class="account-header-row">
+        <div class="account-panel-title">People</div>
+        <div class="admin-muted">Newest accounts first</div>
+      </div>
+      ${userList}
+    </section>
+
+    <section class="account-panel full">
+      <div class="account-header-row">
+        <div class="account-panel-title">Recent invites</div>
+        <div class="admin-muted">Most recent 100</div>
+      </div>
+      ${inviteList}
+    </section>
+  </div>
+</div>`;
+
+  return layout("Admin", content, "admin", viewer);
 }
 
 // ---------------------------------------------------------------------------

@@ -133,6 +133,29 @@ export interface InviteSummary {
   usedAt: number | null;
 }
 
+export interface AdminUserSummary {
+  id: string;
+  username: string;
+  role: UserRole;
+  status: string;
+  canCreateInvites: boolean;
+  inviterUsername: string | null;
+  createdAt: number;
+  inviteCount: number;
+  savedCount: number;
+  readCount: number;
+}
+
+export interface AdminInviteSummary {
+  id: string;
+  status: "available" | "claimed" | "expired";
+  creatorUsername: string;
+  claimedUsername: string | null;
+  createdAt: number;
+  expiresAt: number;
+  usedAt: number | null;
+}
+
 export interface InviteCodeStatus {
   kind: "ready" | "used" | "expired" | "invalid";
   message: string;
@@ -640,6 +663,162 @@ export async function listInvitesForUser(
     expiresAt: row.expires_at,
     usedAt: row.used_at,
   }));
+}
+
+export async function listUsersForAdmin(
+  db: D1Database,
+): Promise<AdminUserSummary[]> {
+  const rows = await db.prepare(
+    `SELECT
+       users.id,
+       users.username,
+       users.role,
+       users.status,
+       users.can_create_invites,
+       users.created_at,
+       inviter.username AS inviter_username,
+       (SELECT COUNT(*) FROM invites WHERE created_by_user_id = users.id) AS invite_count,
+       (SELECT COUNT(*) FROM user_paper_state WHERE user_id = users.id AND saved_at IS NOT NULL) AS saved_count,
+       (SELECT COUNT(*) FROM user_paper_state WHERE user_id = users.id AND read_at IS NOT NULL) AS read_count
+     FROM users
+     LEFT JOIN users AS inviter ON inviter.id = users.inviter_user_id
+     ORDER BY users.created_at DESC`,
+  ).all<{
+    id: string;
+    username: string;
+    role: UserRole;
+    status: string;
+    can_create_invites: number;
+    created_at: number;
+    inviter_username: string | null;
+    invite_count: number | null;
+    saved_count: number | null;
+    read_count: number | null;
+  }>();
+
+  return rows.results.map((row) => ({
+    id: row.id,
+    username: row.username,
+    role: row.role,
+    status: row.status,
+    canCreateInvites: row.can_create_invites === 1,
+    inviterUsername: row.inviter_username,
+    createdAt: row.created_at,
+    inviteCount: row.invite_count ?? 0,
+    savedCount: row.saved_count ?? 0,
+    readCount: row.read_count ?? 0,
+  }));
+}
+
+export async function listInvitesForAdmin(
+  db: D1Database,
+): Promise<AdminInviteSummary[]> {
+  const now = Date.now();
+  const rows = await db.prepare(
+    `SELECT
+       invites.id,
+       invites.created_at,
+       invites.expires_at,
+       invites.used_at,
+       creator.username AS creator_username,
+       claimer.username AS claimed_username,
+       invites.claimed_by_user_id
+     FROM invites
+     JOIN users AS creator ON creator.id = invites.created_by_user_id
+     LEFT JOIN users AS claimer ON claimer.id = invites.claimed_by_user_id
+     ORDER BY invites.created_at DESC
+     LIMIT 100`,
+  ).all<{
+    id: string;
+    created_at: number;
+    expires_at: number;
+    used_at: number | null;
+    creator_username: string;
+    claimed_username: string | null;
+    claimed_by_user_id: string | null;
+  }>();
+
+  return rows.results.map((row) => ({
+    id: row.id,
+    status: row.claimed_by_user_id
+      ? "claimed"
+      : row.expires_at <= now
+        ? "expired"
+        : "available",
+    creatorUsername: row.creator_username,
+    claimedUsername: row.claimed_username,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    usedAt: row.used_at,
+  }));
+}
+
+export async function updateUserForAdmin(
+  db: D1Database,
+  actor: Viewer,
+  input: {
+    userId: string;
+    status?: "active" | "disabled";
+    canCreateInvites?: boolean;
+  },
+): Promise<void> {
+  if (actor.role !== "admin") {
+    throw new AuthError(403, "admin_forbidden", "Admin access required.");
+  }
+
+  const target = await db.prepare(
+    `SELECT id, role, status, can_create_invites
+     FROM users
+     WHERE id = ?
+     LIMIT 1`,
+  ).bind(input.userId).first<{
+    id: string;
+    role: UserRole;
+    status: string;
+    can_create_invites: number;
+  }>();
+
+  if (!target) {
+    throw new AuthError(404, "user_not_found", "User not found.");
+  }
+
+  const updates: string[] = [];
+  const values: Array<string | number> = [];
+
+  if (input.status !== undefined) {
+    if (input.status !== "active" && input.status !== "disabled") {
+      throw new AuthError(400, "invalid_status", "Invalid user status.");
+    }
+
+    if (actor.userId === input.userId && input.status !== "active") {
+      throw new AuthError(400, "self_disable_forbidden", "You cannot disable your own account.");
+    }
+
+    updates.push("status = ?");
+    values.push(input.status);
+  }
+
+  if (input.canCreateInvites !== undefined) {
+    updates.push("can_create_invites = ?");
+    values.push(input.canCreateInvites ? 1 : 0);
+  }
+
+  if (updates.length === 0) {
+    throw new AuthError(400, "no_updates", "No admin changes requested.");
+  }
+
+  updates.push("updated_at = ?");
+  values.push(Date.now());
+
+  await db.prepare(
+    `UPDATE users
+     SET ${updates.join(", ")}
+     WHERE id = ?`,
+  ).bind(...values, input.userId).run();
+
+  if (input.status === "disabled") {
+    await db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(input.userId).run();
+  }
 }
 
 export async function loadReaderStateSnapshot(
