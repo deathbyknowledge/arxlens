@@ -578,6 +578,20 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   background: #f6f8fa;
   color: #1f2328;
 }
+.paper-action.active {
+  background: #ddf4ff;
+  border-color: #0969da;
+  color: #0550ae;
+}
+.paper-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.paper-action-icon .icon {
+  width: 15px;
+  height: 15px;
+}
 .paper-save-button {
   width: 32px;
   height: 32px;
@@ -601,10 +615,34 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
 .ai-badge.error { background: #ffebe9; color: #82071e; }
 
 /* Paper detail page */
+.paper-detail-topline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: #656d76;
+}
+.paper-detail-topline a {
+  color: #656d76;
+}
+.paper-detail-topline a:hover {
+  color: #1f2328;
+  text-decoration: none;
+}
 .paper-detail-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; line-height: 1.3; }
-.paper-detail-meta { font-size: 13px; color: #656d76; margin-bottom: 16px; }
-.paper-links { display: flex; gap: 8px; margin-bottom: 24px; }
-.reader-bar {
+.paper-detail-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  color: #656d76;
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+.detail-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -616,11 +654,55 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   border-radius: 12px;
   background: #f6f8fa;
 }
+.detail-toolbar-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.detail-toolbar-note {
+  font-size: 12px;
+  color: #656d76;
+}
+.detail-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
 .detail-jumps {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 20px;
+}
+.detail-jump-link,
+.detail-link-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid #d1d9e0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12px;
+  color: #57606a;
+}
+.detail-jump-link:hover,
+.detail-link-chip:hover {
+  background: #fff;
+  color: #1f2328;
+  text-decoration: none;
+}
+.detail-link-list {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.detail-read-toggle {
+  min-height: 32px;
 }
 .summary-grid {
   display: grid;
@@ -961,14 +1043,17 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
   gap: 8px;
   margin-top: 12px;
 }
+.challenge-suggestions {
+  margin-bottom: 12px;
+}
 .prompt-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
-  padding: 8px 14px;
+  min-height: 34px;
+  padding: 6px 11px;
   border: 1px solid #d1d9e0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: #fff;
   color: #57606a;
   font: inherit;
@@ -984,16 +1069,42 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
 .vote-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
   background: #f6f8fa;
   border: 1px solid #d1d9e0;
   border-radius: 8px;
   margin-bottom: 20px;
 }
+.vote-bar-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.vote-bar-kicker {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #656d76;
+}
+.vote-bar-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 .vote-bar-count { font-size: 20px; font-weight: 700; }
 .vote-bar-label { font-size: 13px; color: #656d76; }
-.vote-spacer { flex: 1; }
+.vote-bar-note { font-size: 12px; color: #656d76; }
+.vote-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
 .vote-btn:disabled,
 .btn:disabled { opacity: 0.65; cursor: wait; }
 
@@ -1319,35 +1430,40 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
     margin-left: 0;
     width: 100%;
   }
-  .paper-links,
-  .detail-jumps {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-  .paper-links .btn,
-  .detail-jumps .filter-chip {
-    width: 100%;
-  }
-  .detail-jumps { margin-bottom: 16px; }
   .vote-bar {
-    justify-content: space-between;
     padding: 14px;
   }
-  .vote-spacer { display: none; }
-  .reader-bar {
+  .detail-toolbar {
     flex-direction: column;
     align-items: stretch;
   }
-  .reader-actions,
+  .detail-toolbar-actions,
+  .detail-link-list,
   .reader-statuses,
   .paper-actions {
     width: 100%;
   }
-  .reader-actions .btn,
+  .detail-jumps,
+  .detail-link-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .detail-jump-link,
+  .detail-link-chip {
+    width: 100%;
+    justify-content: center;
+  }
+  .detail-toolbar-actions {
+    margin-left: 0;
+  }
+  .detail-read-toggle,
   .paper-actions .paper-action {
     flex: 1 1 auto;
     justify-content: center;
+  }
+  .vote-bar-actions {
+    margin-left: 0;
   }
   .section {
     border-radius: 12px;
@@ -1670,6 +1786,15 @@ function updatePaperElement(element) {
 
     if (target.classList.contains('paper-save-button')) {
       const label = saved ? 'Remove from saved' : 'Save for later';
+      target.setAttribute('aria-label', label);
+      target.title = label;
+      return;
+    }
+
+    const saveLabel = target.querySelector('[data-save-label]');
+    if (saveLabel instanceof HTMLElement) {
+      const label = saved ? 'Remove from saved' : 'Save for later';
+      saveLabel.textContent = saved ? 'Saved' : 'Save';
       target.setAttribute('aria-label', label);
       target.title = label;
       return;
@@ -2730,23 +2855,28 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
 
   const sectionNav = `
 <nav class="detail-jumps">
-  <a href="#summary" class="filter-chip">At a glance</a>
-  <a href="#review" class="filter-chip">AI review</a>
-  <a href="#abstract" class="filter-chip">Abstract</a>
-  <a href="#challenges" class="filter-chip">Challenges</a>
+  <a href="#summary" class="detail-jump-link">Summary</a>
+  <a href="#review" class="detail-jump-link">Review</a>
+  <a href="#abstract" class="detail-jump-link">Abstract</a>
+  <a href="#challenges" class="detail-jump-link">Challenges</a>
 </nav>`;
 
   const summarySection = detailSummarySection(paper, safeIntro, safeReview, reviewData, reviewStatus);
 
-  const readerBar = `
-<div class="reader-bar">
-  <div>
+  const detailToolbar = `
+<div class="detail-toolbar">
+  <div class="detail-toolbar-main">
     <div class="reader-statuses" data-retention-statuses></div>
-    <div class="reader-sync-note" style="margin-top:8px">${viewer ? `Reader state syncs to <strong>@${htmlEscape(viewer.username)}</strong>.` : `Reader state stays local until you sign in.`}</div>
+    <div class="detail-toolbar-note">${viewer ? `Synced to @${htmlEscape(viewer.username)}` : `Local to this browser`}</div>
+    ${sectionNav}
   </div>
-  <div class="reader-actions">
-    <button type="button" class="btn" data-save-toggle>Save for later</button>
-    <button type="button" class="btn" data-read-toggle>Mark unread</button>
+  <div class="detail-toolbar-actions">
+    <button type="button" class="paper-action detail-save-toggle" data-save-toggle aria-label="Save for later" title="Save for later"><span class="paper-action-icon">${bookmarkIcon()}</span><span data-save-label>Save</span></button>
+    <button type="button" class="paper-action detail-read-toggle" data-read-toggle>Mark unread</button>
+    <div class="detail-link-list">
+      <a href="${htmlEscape(paper.arxiv_url)}" target="_blank" rel="noopener" class="detail-link-chip">arXiv</a>
+      <a href="${htmlEscape(paper.pdf_url)}" target="_blank" rel="noopener" class="detail-link-chip">PDF</a>
+    </div>
   </div>
 </div>`;
 
@@ -2754,21 +2884,26 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
   const voteBar = `
 <div class="vote-bar" data-vote-card data-current-vote="${userVote ?? ""}">
   <span class="sr-only" aria-live="polite" data-vote-message></span>
-  <form method="POST" action="/paper/${htmlEscape(paper.id)}/vote" style="display:contents" data-vote-form>
-    <input type="hidden" name="dir" value="up">
-    <input type="hidden" name="next" value="${htmlEscape(currentPath)}">
-    <button type="submit" class="btn${userVote === "up" ? " active" : ""}" data-vote-button data-vote-dir="up" aria-pressed="${userVote === "up" ? "true" : "false"}">&#9650; ${viewer ? "Upvote" : "Sign in to vote"}</button>
-  </form>
-  <div>
-    <div class="vote-bar-count" data-vote-score>${score}</div>
-    <div class="vote-bar-label" data-vote-summary>${paper.votes_up} up &middot; ${paper.votes_down} down</div>
+  <div class="vote-bar-main">
+    <div class="vote-bar-kicker">Community signal</div>
+    <div class="vote-bar-summary">
+      <div class="vote-bar-count" data-vote-score>${score}</div>
+      <div class="vote-bar-label" data-vote-summary>${paper.votes_up} up &middot; ${paper.votes_down} down</div>
+    </div>
+    <div class="vote-bar-note">${viewer ? 'Use arrows to vote' : 'Sign in to vote with arrows'}</div>
   </div>
-  <div class="vote-spacer"></div>
-  <form method="POST" action="/paper/${htmlEscape(paper.id)}/vote" style="display:contents" data-vote-form>
-    <input type="hidden" name="dir" value="down">
-    <input type="hidden" name="next" value="${htmlEscape(currentPath)}">
-    <button type="submit" class="btn${userVote === "down" ? " active" : ""}" data-vote-button data-vote-dir="down" aria-pressed="${userVote === "down" ? "true" : "false"}">&#9660; ${viewer ? "Downvote" : "Sign in to vote"}</button>
-  </form>
+  <div class="vote-bar-actions">
+    <form method="POST" action="/paper/${htmlEscape(paper.id)}/vote" style="display:contents" data-vote-form>
+      <input type="hidden" name="dir" value="up">
+      <input type="hidden" name="next" value="${htmlEscape(currentPath)}">
+      <button type="submit" class="vote-btn${userVote === "up" ? " active" : ""}" title="${viewer ? "Upvote" : "Sign in to vote"}" aria-label="${viewer ? "Upvote" : "Sign in to vote"}" data-vote-button data-vote-dir="up" aria-pressed="${userVote === "up" ? "true" : "false"}">&#9650;</button>
+    </form>
+    <form method="POST" action="/paper/${htmlEscape(paper.id)}/vote" style="display:contents" data-vote-form>
+      <input type="hidden" name="dir" value="down">
+      <input type="hidden" name="next" value="${htmlEscape(currentPath)}">
+      <button type="submit" class="vote-btn${userVote === "down" ? " active" : ""}" title="${viewer ? "Downvote" : "Sign in to vote"}" aria-label="${viewer ? "Downvote" : "Sign in to vote"}" data-vote-button data-vote-dir="down" aria-pressed="${userVote === "down" ? "true" : "false"}">&#9660;</button>
+    </form>
+  </div>
 </div>`;
 
   // Abstract section
@@ -2805,26 +2940,21 @@ export function paperDetailPage(opts: PaperDetailOptions): string {
   data-paper-fetched-at="${paper.fetched_at}"
   data-current-vote="${userVote ?? ""}"
 >
-  <nav style="font-size:13px;color:#656d76;margin-bottom:16px">
-    <a href="/">Feed</a> / <span>${htmlEscape(paper.id)}</span> ${versionChip}
+  <nav class="paper-detail-topline">
+    <a href="/">Feed</a>
+    <span>/</span>
+    <span>${htmlEscape(paper.id)}</span>
+    ${versionChip}
   </nav>
 
   <h1 class="paper-detail-title">${htmlEscape(paper.title)}</h1>
   <div class="paper-detail-meta">
     ${catBadges}
-    ${versionChip}
-    &nbsp;
     ${htmlEscape(authors.join(", "))}
     &middot; ${formatDate(paper.published_at)}
   </div>
 
-  <div class="paper-links">
-    <a href="${htmlEscape(paper.arxiv_url)}" target="_blank" rel="noopener" class="btn">arXiv page</a>
-    <a href="${htmlEscape(paper.pdf_url)}" target="_blank" rel="noopener" class="btn">PDF</a>
-  </div>
-
-  ${readerBar}
-  ${sectionNav}
+  ${detailToolbar}
   ${summarySection}
   ${voteBar}
   ${reviewSection}
