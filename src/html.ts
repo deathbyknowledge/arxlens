@@ -99,6 +99,28 @@ main {
   margin: 0 auto;
   padding: 24px;
 }
+.site-footer {
+  margin-top: 32px;
+  border-top: 1px solid #d1d9e0;
+}
+.site-footer-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #656d76;
+}
+.site-footer a {
+  color: #57606a;
+}
+.site-footer a:hover {
+  color: #1f2328;
+  text-decoration: none;
+}
 
 /* Feed header */
 .feed-shell { display: flex; flex-direction: column; gap: 16px; }
@@ -1241,6 +1263,7 @@ a.category:hover { text-decoration: none; background: #c2e7ff; }
     max-width: min(55vw, 180px);
   }
   main { padding: 16px; }
+  .site-footer-inner { padding: 14px 16px 20px; }
   .feed-filter-form {
     grid-template-columns: 1fr;
   }
@@ -2279,6 +2302,12 @@ function layout(
 <main>
 ${content}
 </main>
+<footer class="site-footer">
+  <div class="site-footer-inner">
+    <p>Thank you to <a href="https://arxiv.org" target="_blank" rel="noopener">arXiv</a> for use of its open access interoperability.</p>
+    <p>This product was not reviewed or approved by, nor does it necessarily express or reflect the policies or opinions of, arXiv. Built by <a href="https://theagents.company" target="_blank" rel="noopener">The Agents Company</a>.</p>
+  </div>
+</footer>
 <script id="arxlens-viewer" type="application/json">${viewerScriptJson(viewer)}</script>
 <script>${CLIENT_JS}</script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
@@ -3257,6 +3286,15 @@ export function aboutPage(opts: AboutOptions): string {
       <p>arxlens is built for the daily &quot;what should I read?&quot; problem on <a href="https://arxiv.org" target="_blank" rel="noopener">arXiv</a>. The feed is meant to feel like a paper timeline: quick AI takes first, then a deeper critical review when a paper earns your attention.</p>
       <p>Each paper gets a plain-language introduction, a structured critical review, and a challenge thread where the AI can revisit claims against the paper and cited sources.</p>
       <p>The goal is not to replace reading papers. The goal is to help you decide what deserves your time and where to be skeptical.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">Acknowledgement</div>
+    <div class="section-body">
+      <p>Thank you to <a href="https://arxiv.org" target="_blank" rel="noopener">arXiv</a> for use of its open access interoperability.</p>
+      <p>This product was not reviewed or approved by, nor does it necessarily express or reflect the policies or opinions of, arXiv.</p>
+      <p>arxlens is an independent project and is not affiliated with arXiv or Cornell University.</p>
     </div>
   </div>
 
